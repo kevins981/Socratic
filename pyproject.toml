@@ -3,8 +3,11 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "socratic"
-version = "0.1.0"
+name = "socratic-cli"
+version = "0.0.1"
+authors = [
+  { name="Kevin Song", email="kevinsong981@gmail.com" },
+]
 description = "Socratic: Automated Knowledge Synthesis for Vertical LLM Agents"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -15,11 +18,16 @@ dependencies = [
 classifiers = [
   "Programming Language :: Python :: 3",
 ]
+license = "Apache-2.0"
+license-files = ["LICEN[CS]E*"]
 
 [project.scripts]
-socratic = "socratic.cli:main"
+socratic-cli = "socratic.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["socratic*"]
 
+[project.urls]
+Homepage = "https://github.com/kevins981/Socratic"
+Issues = "https://github.com/kevins981/Socratic/issues"
 

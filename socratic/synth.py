@@ -170,7 +170,7 @@ In such cases, each knowledge unit captures a distinct aspect of system knowledg
 
 def build_synth_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="socratic synth",
+        prog="socratic-cli synth",
         description=(
             "Synthesize design notes for key concepts in the provided input directory."
         ),

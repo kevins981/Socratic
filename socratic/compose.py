@@ -162,7 +162,7 @@ Now, please process the following JSON list of knowledge units and generate the 
 
 def build_compose_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="socratic compose",
+        prog="socratic-cli compose",
         description=(
             "Compose command."
         ),

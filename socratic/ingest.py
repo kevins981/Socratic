@@ -69,7 +69,7 @@ Would you like me to..."
 
 def build_ingest_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="socratic ingest",
+        prog="socratic-cli ingest",
         description="Identify key concepts for the current directory.",
     )
     parser.add_argument(

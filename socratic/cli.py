@@ -8,7 +8,7 @@ from .compose import build_compose_parser, run_compose
 
 def build_root_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="socratic",
+        prog="socratic-cli",
         description="Socratic CLI with simple subcommands",
     )
     parser.add_argument(

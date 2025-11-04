@@ -9,7 +9,7 @@ from .io_utils import save_as
 
 def build_create_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="socratic create",
+        prog="socratic-cli create",
         description="Create a new project scaffold under projects/{name}.",
     )
     parser.add_argument(

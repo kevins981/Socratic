@@ -46,7 +46,12 @@ For each concept, the synthesis stores the synthesized knowledge in both plain t
 
 Convert synthesized knowledge into prompts that are ready to be dropped directly into your LLM agent’s context.
 
-## Installation
+## Install from Pypi
+```bash
+pip install socratic-cli
+```
+
+## Install from Source
 
 ```bash
 git clone https://github.com/kevins981/Socratic.git

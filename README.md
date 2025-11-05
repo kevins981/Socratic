@@ -91,7 +91,7 @@ socratic-cli compose --project airline_demo --model gpt-5
 Web UI:
 ```bash
 cd web
-npm run dev:project -- --project airline_demo
+npm run dev:project -- --project google_analytics
 ```
 
 ## Privacy & Security

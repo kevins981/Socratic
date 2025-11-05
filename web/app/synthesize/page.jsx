@@ -17,6 +17,30 @@ export default function SynthesizePage() {
   const [inputText, setInputText] = useState('');
   const eventSourceRef = useRef(null);
   const [activeTab, setActiveTab] = useState('source'); // 'source' | 'agent'
+  const chatContainerRef = useRef(null);
+
+  function parseLogLinesToMessages(lines) {
+    // Parse log lines into structured messages
+    const messages = [];
+    for (const line of lines) {
+      if (line.startsWith('› ')) {
+        // User message
+        const text = line.slice(2).trim();
+        if (text) {
+          messages.push({ type: 'user', text });
+        }
+      } else if (line.startsWith('[INFO]') || line.startsWith('[ERR]')) {
+        // System message
+        if (line.trim()) {
+          messages.push({ type: 'system', text: line });
+        }
+      } else {
+        // Agent message - keep empty lines for agent output formatting
+        messages.push({ type: 'agent', text: line });
+      }
+    }
+    return messages;
+  }
 
   function ansiToHtml(input) {
     if (!input) return '';
@@ -352,6 +376,13 @@ export default function SynthesizePage() {
     } catch {}
   }
 
+  // Auto-scroll chat to bottom when new messages arrive
+  useEffect(() => {
+    if (chatContainerRef.current) {
+      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+    }
+  }, [logLines]);
+
   useEffect(() => {
     if (!activePath) return;
     if (fileContents[activePath]) return;
@@ -481,15 +512,31 @@ export default function SynthesizePage() {
           )}
         </>
       ) : (
-        // Agent tab: console only
+        // Agent tab: chat interface
         <>
           {synthesizeSession ? (
             <div style={styles.logContainer}>
               <div style={styles.logHeader}>
                 <span>{synthesizeSession.status === 'running' ? 'Running…' : synthesizeSession.status === 'exited' ? 'Completed' : synthesizeSession.status}</span>
               </div>
-              <div style={styles.logBox}>
-                <pre style={styles.pre} dangerouslySetInnerHTML={{ __html: ansiToHtml(logLines.join('\n')) }} />
+              <div style={styles.chatContainer} ref={chatContainerRef}>
+                {parseLogLinesToMessages(logLines).map((msg, idx) => {
+                  if (msg.type === 'user') {
+                    return (
+                      <div key={idx} style={styles.userMessageRow}>
+                        <div style={styles.userBubble}>{msg.text}</div>
+                      </div>
+                    );
+                  } else if (msg.type === 'system') {
+                    return (
+                      <div key={idx} style={styles.systemMessage}>{msg.text}</div>
+                    );
+                  } else {
+                    return (
+                      <pre key={idx} style={styles.agentMessage} dangerouslySetInnerHTML={{ __html: ansiToHtml(msg.text) }} />
+                    );
+                  }
+                })}
               </div>
               <div style={styles.inputRow}>
                 <input
@@ -746,14 +793,44 @@ const styles = {
     flexDirection: 'column',
     gap: 8
   },
-  logBox: {
+  chatContainer: {
     border: '1px solid #e2e2e2',
     borderRadius: 8,
-    padding: 12,
+    padding: 16,
     height: 440,
     overflow: 'auto',
-    background: '#0b1020',
-    color: '#e5e7eb'
+    background: '#ffffff',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 12
+  },
+  userMessageRow: {
+    display: 'flex',
+    justifyContent: 'flex-end'
+  },
+  userBubble: {
+    background: '#2b5cff',
+    color: '#ffffff',
+    padding: '10px 14px',
+    borderRadius: 18,
+    maxWidth: '70%',
+    wordWrap: 'break-word',
+    fontSize: 14
+  },
+  agentMessage: {
+    margin: 0,
+    padding: 0,
+    whiteSpace: 'pre-wrap',
+    fontSize: 14,
+    color: '#1f2937',
+    lineHeight: 0.5
+  },
+  systemMessage: {
+    fontSize: 12,
+    color: '#9ca3af',
+    textAlign: 'left',
+    fontStyle: 'italic',
+    padding: '4px 0'
   },
   logHeader: {
     padding: '8px 12px',

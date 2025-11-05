@@ -32,7 +32,7 @@ export async function POST(req) {
     const args = [
       '-m', 'socratic.cli', 'compose',
       '--project', projectName,
-      '--model', 'gpt-5',
+      '--model', 'gpt-5-mini',
       '--units-json-file', unitsFile
     ];
     

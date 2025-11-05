@@ -460,7 +460,7 @@ export default function IngestPage() {
                       style={p === activePath ? styles.listItemActive : styles.listItem}
                       title={p}
                     >
-                      {p}
+                      {p.split('/').pop()}
                     </div>
                   ))}
                 </div>

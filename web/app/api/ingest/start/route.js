@@ -18,7 +18,7 @@ export async function POST(req) {
     const webCwd = process.cwd();
     const repoRoot = path.resolve(webCwd, '..');
 
-    const args = ['-m', 'socratic.cli', 'ingest', '--input_dir', inputDir, '--project', projectName];
+    const args = ['-m', 'socratic.cli', 'ingest', '--model', 'gpt-5-mini', '--input_dir', inputDir, '--project', projectName];
     const child = spawn('python3', args, {
       cwd: repoRoot,
       env: { ...process.env },

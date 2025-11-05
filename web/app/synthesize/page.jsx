@@ -1,175 +1,22 @@
 "use client";
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useSelectedFiles } from '../selected-files-context';
 
 export default function SynthesizePage() {
   const [showPicker, setShowPicker] = useState(false);
-  const [pickerMode, setPickerMode] = useState('file'); // 'file' or 'directory'
   const [currentDir, setCurrentDir] = useState(null);
   const [dirItems, setDirItems] = useState([]);
   const [loadingDir, setLoadingDir] = useState(false);
-  const [selectedFile, setSelectedFile] = useState(null);
-  const [selectedSourceDir, setSelectedSourceDir] = useState(null);
-  const [fileContent, setFileContent] = useState([]);
+  const { selectedPaths, setSelectedPaths, activePath, setActivePath } = useSelectedFiles();
+  const [fileContents, setFileContents] = useState({}); // path -> content
   const [loadingContent, setLoadingContent] = useState(false);
-  const [activeTab, setActiveTab] = useState('source'); // 'source' | 'agent'
+  const [selectedDir, setSelectedDir] = useState('');
   const [synthesizeSession, setSynthesizeSession] = useState(null); // { id, status }
   const [logLines, setLogLines] = useState([]);
+  const [inputText, setInputText] = useState('');
   const eventSourceRef = useRef(null);
-
-  // Load persisted state on mount
-  useEffect(() => {
-    const loadState = async () => {
-      try {
-        // Get current project root
-        const dirResponse = await fetch('/api/dir');
-        const dirData = await dirResponse.json();
-        const currentProjectRoot = dirData.cwd;
-        
-        // Check if saved data is from the same project
-        const savedProjectRoot = localStorage.getItem('socratic:synthesize:projectRoot');
-        
-        // If project changed, clear all cached data
-        if (savedProjectRoot && savedProjectRoot !== currentProjectRoot) {
-          console.log('Project changed, clearing cached data');
-          localStorage.removeItem('socratic:synthesize:selectedFile');
-          localStorage.removeItem('socratic:synthesize:fileContent');
-          localStorage.removeItem('socratic:synthesize:selectedSourceDir');
-          localStorage.removeItem('socratic:synthesize:session');
-          localStorage.removeItem('socratic:synthesize:logs');
-          localStorage.removeItem('socratic:synthesize:projectRoot');
-        }
-        
-        // Store current project root
-        localStorage.setItem('socratic:synthesize:projectRoot', currentProjectRoot);
-        
-        const savedFile = localStorage.getItem('socratic:synthesize:selectedFile');
-        const savedContent = localStorage.getItem('socratic:synthesize:fileContent');
-        const savedSourceDir = localStorage.getItem('socratic:synthesize:selectedSourceDir');
-        const savedSession = localStorage.getItem('socratic:synthesize:session');
-        const savedLogs = localStorage.getItem('socratic:synthesize:logs');
-        
-        // Always try to load concepts.txt first to verify it exists
-        // This ensures we clear old state if the file doesn't exist in the current project
-        const conceptsResponse = await fetch('/api/file?path=concepts.txt');
-        if (conceptsResponse.ok) {
-          // concepts.txt exists, load it
-          const data = await conceptsResponse.json();
-          setSelectedFile({ name: 'concepts.txt', path: data.path });
-          parseAndSetContent(data.content);
-        } else {
-          // concepts.txt doesn't exist
-          // Only restore saved state if the saved file is NOT concepts.txt
-          if (savedFile && savedContent) {
-            const fileObj = JSON.parse(savedFile);
-            // Only restore if it's not concepts.txt
-            if (fileObj.name !== 'concepts.txt') {
-              setSelectedFile(fileObj);
-              setFileContent(JSON.parse(savedContent));
-            }
-          }
-        }
-        
-        if (savedSourceDir) {
-          setSelectedSourceDir(savedSourceDir);
-        }
-        if (savedSession) {
-          const session = JSON.parse(savedSession);
-          setSynthesizeSession(session);
-          
-          // Restore logs
-          if (savedLogs) {
-            setLogLines(JSON.parse(savedLogs));
-          }
-          
-          // If session is still running, reconnect to the stream
-          if (session.status === 'running') {
-            reconnectToSession(session.id);
-          }
-        }
-      } catch (err) {
-        console.log('Error loading saved state:', err);
-      }
-    };
-    
-    loadState();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Persist selectedFile when it changes
-  useEffect(() => {
-    try {
-      if (selectedFile) {
-        localStorage.setItem('socratic:synthesize:selectedFile', JSON.stringify(selectedFile));
-      } else {
-        localStorage.removeItem('socratic:synthesize:selectedFile');
-      }
-    } catch (err) {
-      console.log('Error saving selected file:', err);
-    }
-  }, [selectedFile]);
-
-  // Persist fileContent when it changes
-  useEffect(() => {
-    try {
-      if (fileContent.length > 0) {
-        localStorage.setItem('socratic:synthesize:fileContent', JSON.stringify(fileContent));
-      } else {
-        localStorage.removeItem('socratic:synthesize:fileContent');
-      }
-    } catch (err) {
-      console.log('Error saving file content:', err);
-    }
-  }, [fileContent]);
-
-  // Persist selectedSourceDir when it changes
-  useEffect(() => {
-    try {
-      if (selectedSourceDir) {
-        localStorage.setItem('socratic:synthesize:selectedSourceDir', selectedSourceDir);
-      } else {
-        localStorage.removeItem('socratic:synthesize:selectedSourceDir');
-      }
-    } catch (err) {
-      console.log('Error saving source directory:', err);
-    }
-  }, [selectedSourceDir]);
-
-  // Persist synthesize session when it changes
-  useEffect(() => {
-    try {
-      if (synthesizeSession) {
-        localStorage.setItem('socratic:synthesize:session', JSON.stringify(synthesizeSession));
-      } else {
-        localStorage.removeItem('socratic:synthesize:session');
-      }
-    } catch (err) {
-      console.log('Error saving synthesize session:', err);
-    }
-  }, [synthesizeSession]);
-
-  // Persist log lines when they change
-  useEffect(() => {
-    try {
-      if (logLines.length > 0) {
-        localStorage.setItem('socratic:synthesize:logs', JSON.stringify(logLines));
-      } else {
-        localStorage.removeItem('socratic:synthesize:logs');
-      }
-    } catch (err) {
-      console.log('Error saving logs:', err);
-    }
-  }, [logLines]);
-
-  // Cleanup EventSource on unmount
-  useEffect(() => {
-    return () => {
-      if (eventSourceRef.current) {
-        eventSourceRef.current.close();
-        eventSourceRef.current = null;
-      }
-    };
-  }, []);
+  const [activeTab, setActiveTab] = useState('source'); // 'source' | 'agent'
 
   function ansiToHtml(input) {
     if (!input) return '';
@@ -251,56 +98,114 @@ export default function SynthesizePage() {
     return html;
   }
 
-  async function loadConceptsFile() {
+  const hasSelection = selectedPaths.length > 0;
+
+  // selection persistence handled by SelectedFilesProvider
+
+  // Load persisted session state on mount
+  useEffect(() => {
+    const loadState = async () => {
+      try {
+        // Get current project root
+        const dirResponse = await fetch('/api/dir');
+        const dirData = await dirResponse.json();
+        const currentProjectRoot = dirData.cwd;
+        
+        // Check if saved data is from the same project
+        const savedProjectRoot = localStorage.getItem('socratic:synthesize:projectRoot');
+        
+        // If project changed, clear all cached data
+        if (savedProjectRoot && savedProjectRoot !== currentProjectRoot) {
+          console.log('Project changed, clearing cached data');
+          localStorage.removeItem('socratic:synthesize:session');
+          localStorage.removeItem('socratic:synthesize:logs');
+          localStorage.removeItem('socratic:synthesize:selectedDir');
+          localStorage.removeItem('socratic:synthesize:projectRoot');
+        }
+        
+        // Store current project root
+        localStorage.setItem('socratic:synthesize:projectRoot', currentProjectRoot);
+        
+        const savedSession = localStorage.getItem('socratic:synthesize:session');
+        const savedLogs = localStorage.getItem('socratic:synthesize:logs');
+        const savedDir = localStorage.getItem('socratic:synthesize:selectedDir');
+        
+        if (savedDir) {
+          setSelectedDir(savedDir);
+        }
+        if (savedSession) {
+          const session = JSON.parse(savedSession);
+          setSynthesizeSession(session);
+          
+          // Restore logs
+          if (savedLogs) {
+            setLogLines(JSON.parse(savedLogs));
+          }
+          
+          // If session is still running, reconnect to the stream
+          if (session.status === 'running') {
+            reconnectToSession(session.id);
+          }
+        }
+      } catch (err) {
+        console.log('Error loading saved session state:', err);
+      }
+    };
+    
+    loadState();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Persist selected directory when it changes
+  useEffect(() => {
     try {
-      // Try to load concepts.txt from the project directory
-      const response = await fetch('/api/file?path=concepts.txt');
-      if (response.ok) {
-        const data = await response.json();
-        setSelectedFile({ name: 'concepts.txt', path: data.path });
-        parseAndSetContent(data.content);
+      if (selectedDir) {
+        localStorage.setItem('socratic:synthesize:selectedDir', selectedDir);
       } else {
-        // File doesn't exist - clear any saved state
-        setSelectedFile(null);
-        setFileContent([]);
+        localStorage.removeItem('socratic:synthesize:selectedDir');
       }
     } catch (err) {
-      // File doesn't exist or error - clear saved state
-      console.log('concepts.txt not found or error loading it');
-      setSelectedFile(null);
-      setFileContent([]);
+      console.log('Error saving selected directory:', err);
     }
-  }
+  }, [selectedDir]);
 
-  function parseAndSetContent(content) {
-    // Parse file content: split into lines and remove empty lines
-    const lines = content.split('\n')
-      .map(line => line.trim())
-      .filter(line => line.length > 0);
-    setFileContent(lines);
-  }
-
-  function openFilePicker() {
-    setPickerMode('file');
-    setShowPicker(true);
-    if (!currentDir && !loadingDir) {
-      setLoadingDir(true);
-      fetch('/api/dir')
-        .then((r) => r.json())
-        .then((data) => {
-          setCurrentDir(data.cwd || '/');
-          setDirItems(Array.isArray(data.items) ? data.items : []);
-        })
-        .catch(() => {
-          setCurrentDir('/');
-          setDirItems([]);
-        })
-        .finally(() => setLoadingDir(false));
+  // Persist synthesize session when it changes
+  useEffect(() => {
+    try {
+      if (synthesizeSession) {
+        localStorage.setItem('socratic:synthesize:session', JSON.stringify(synthesizeSession));
+      } else {
+        localStorage.removeItem('socratic:synthesize:session');
+      }
+    } catch (err) {
+      console.log('Error saving synthesize session:', err);
     }
-  }
+  }, [synthesizeSession]);
 
-  function openDirPicker() {
-    setPickerMode('directory');
+  // Persist log lines when they change
+  useEffect(() => {
+    try {
+      if (logLines.length > 0) {
+        localStorage.setItem('socratic:synthesize:logs', JSON.stringify(logLines));
+      } else {
+        localStorage.removeItem('socratic:synthesize:logs');
+      }
+    } catch (err) {
+      console.log('Error saving logs:', err);
+    }
+  }, [logLines]);
+
+  // Cleanup EventSource on unmount
+  useEffect(() => {
+    return () => {
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close();
+        eventSourceRef.current = null;
+      }
+    };
+  }, []);
+
+  function openPicker() {
     setShowPicker(true);
     if (!currentDir && !loadingDir) {
       setLoadingDir(true);
@@ -341,35 +246,40 @@ export default function SynthesizePage() {
     navigateTo(parent);
   }
 
-  function selectCurrentDirectory() {
-    if (!currentDir) return;
-    setSelectedSourceDir(currentDir);
-    setShowPicker(false);
+  function togglePath(path) {
+    setSelectedPaths((prev) =>
+      prev.includes(path) ? prev.filter((p) => p !== path) : [...prev, path]
+    );
   }
 
-  async function selectFile(item) {
-    if (item.isDir) {
-      navigateTo(item.path);
-      return;
-    }
-    
-    // It's a file, load its content
-    setLoadingContent(true);
+  async function confirmSelection() {
     try {
-      const response = await fetch(`/api/file?path=${encodeURIComponent(item.path)}`);
-      if (response.ok) {
-        const data = await response.json();
-        setSelectedFile(item);
-        parseAndSetContent(data.content);
+      if (!currentDir) {
         setShowPicker(false);
-      } else {
-        alert('Failed to load file');
+        return;
       }
-    } catch (err) {
-      alert('Error loading file: ' + err.message);
+      const resp = await fetch(`/api/dir-files?dir=${encodeURIComponent(currentDir)}`);
+      const data = await resp.json();
+      if (Array.isArray(data?.files)) {
+        setSelectedPaths(data.files);
+        setSelectedDir(currentDir);
+        if (!activePath || (data.files.length > 0 && !data.files.includes(activePath))) {
+          setActivePath(data.files[0] || null);
+        }
+      } else {
+        setSelectedPaths([]);
+        setSelectedDir(currentDir);
+      }
+    } catch {
+      setSelectedPaths([]);
+      setSelectedDir(currentDir || '');
     } finally {
-      setLoadingContent(false);
+      setShowPicker(false);
     }
+  }
+
+  function cancelSelection() {
+    setShowPicker(false);
   }
 
   function reconnectToSession(sessionId) {
@@ -401,7 +311,7 @@ export default function SynthesizePage() {
   }
 
   async function startSynthesize() {
-    if (!selectedFile || !selectedSourceDir || (synthesizeSession && synthesizeSession.status === 'running')) return;
+    if (!selectedDir || (synthesizeSession && synthesizeSession.status === 'running')) return;
     try {
       // Close previous stream if any
       try {
@@ -414,10 +324,7 @@ export default function SynthesizePage() {
       const resp = await fetch('/api/synthesize/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          inputDir: selectedSourceDir,
-          keyConceptsFile: selectedFile.path
-        })
+        body: JSON.stringify({ inputDir: selectedDir })
       });
       const data = await resp.json();
       if (!resp.ok) throw new Error(data?.error || 'Failed to start synthesize');
@@ -430,88 +337,100 @@ export default function SynthesizePage() {
     }
   }
 
+  async function submitInput() {
+    if (!synthesizeSession || synthesizeSession.status !== 'running' || !inputText) return;
+    const text = inputText;
+    setInputText('');
+    // Echo user input to the console immediately
+    setLogLines((prev) => [...prev, `› ${text}`]);
+    try {
+      await fetch('/api/synthesize/input', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId: synthesizeSession.id, text })
+      });
+    } catch {}
+  }
+
+  useEffect(() => {
+    if (!activePath) return;
+    if (fileContents[activePath]) return;
+    setLoadingContent(true);
+    fetch(`/api/file?path=${encodeURIComponent(activePath)}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (data && typeof data.content === 'string') {
+          setFileContents((prev) => ({ ...prev, [activePath]: data.content }));
+        } else {
+          setFileContents((prev) => ({ ...prev, [activePath]: '[Unable to display file]' }));
+        }
+      })
+      .catch(() => {
+        setFileContents((prev) => ({ ...prev, [activePath]: '[Error loading file]' }));
+      })
+      .finally(() => setLoadingContent(false));
+  }, [activePath, fileContents]);
+
   const picker = showPicker ? (
-    <div style={styles.modal} onClick={(e) => { if (e.target === e.currentTarget) setShowPicker(false); }}>
-      <div style={styles.modalContent}>
+    <div style={styles.modalOverlay}>
+      <div style={styles.modal}>
         <div style={styles.modalHeader}>
-          <h2 style={styles.modalTitle}>
-            {pickerMode === 'directory' ? 'Select Directory' : 'Select File'}
-          </h2>
-          <button onClick={() => setShowPicker(false)} style={styles.closeButton}>×</button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <button onClick={goUp} style={styles.buttonSecondary}>Up</button>
+            <span style={{ fontFamily: 'monospace', fontSize: 12, color: '#444' }}>{currentDir || ''}</span>
+          </div>
         </div>
-        <div style={styles.pathBar}>
-          <button onClick={goUp} style={styles.upButton} disabled={!currentDir || currentDir === '/'}>
-            ↑ Up
-          </button>
-          <span style={styles.currentPath}>{currentDir || '/'}</span>
-          {pickerMode === 'directory' && (
-            <button onClick={selectCurrentDirectory} style={styles.selectDirButton}>
-              Select This Directory
-            </button>
-          )}
-        </div>
-        <div style={styles.fileList}>
+        <div style={styles.modalBody}>
           {loadingDir ? (
-            <div style={styles.loading}>Loading...</div>
+            <div>Loading files…</div>
+          ) : !dirItems || dirItems.length === 0 ? (
+            <div>Empty directory.</div>
           ) : (
-            dirItems.map((item) => (
-              <div
-                key={item.path}
-                style={styles.fileItem}
-                onClick={() => pickerMode === 'file' ? selectFile(item) : item.isDir && navigateTo(item.path)}
-                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f3f4f6'}
-                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-              >
-                <span style={styles.fileIcon}>{item.isDir ? '📁' : '📄'}</span>
-                <span style={styles.fileName}>{item.name}</span>
-              </div>
-            ))
+            <div style={styles.fileList}>
+              {dirItems.map((item) => (
+                item.isDir ? (
+                  <div key={item.path} style={styles.dirRow} onClick={() => navigateTo(item.path)}>
+                    <span style={styles.dirName}>📁 {item.name}</span>
+                  </div>
+                ) : (
+                  <div key={item.path} style={styles.checkboxRow}>
+                    <span style={{ ...styles.checkboxLabel, color: '#666' }}>{item.name}</span>
+                  </div>
+                )
+              ))}
+            </div>
           )}
+        </div>
+        <div style={styles.modalFooter}>
+          <button onClick={cancelSelection} style={styles.buttonSecondary}>Cancel</button>
+          <button onClick={confirmSelection} style={styles.buttonPrimary}>Use this directory</button>
         </div>
       </div>
     </div>
   ) : null;
-
-  const canSynthesize = selectedFile && selectedSourceDir;
 
   return (
     <div>
       <h1>Synthesize</h1>
 
       <div style={styles.tabsHeader}>
-        <button onClick={() => setActiveTab('source')} style={activeTab === 'source' ? styles.tabActive : styles.tab}>Source file</button>
+        <button onClick={() => setActiveTab('source')} style={activeTab === 'source' ? styles.tabActive : styles.tab}>Source files</button>
         <button onClick={() => setActiveTab('agent')} style={activeTab === 'agent' ? styles.tabActive : styles.tab}>Agent</button>
       </div>
 
       {activeTab === 'source' ? (
         <>
-          <div style={styles.controls}>
-            <button onClick={openFilePicker} style={styles.selectButton}>
-              Select File
-            </button>
-            {selectedFile && (
-              <span style={styles.selectedFileLabel}>
-                Selected: {selectedFile.name}
-              </span>
-            )}
-          </div>
-
-          <div style={styles.controls}>
-            <button onClick={openDirPicker} style={styles.selectButton}>
-              Select Source Directory
-            </button>
-            {selectedSourceDir && (
-              <span style={styles.selectedFileLabel}>
-                Directory: {selectedSourceDir}
-              </span>
-            )}
-          </div>
-
+          {selectedDir ? (
+            <div style={styles.selectedDirBar}>
+              <span style={styles.selectedDirLabel}>Current directory:</span>
+              <span style={styles.selectedDirValue}>{selectedDir}</span>
+            </div>
+          ) : null}
           <div style={styles.synthesizeBar}>
             <button
-              style={canSynthesize ? styles.synthesizeButton : styles.synthesizeButtonDisabled}
+              style={(!selectedDir || !!(synthesizeSession && synthesizeSession.status === 'running')) ? styles.buttonPrimaryDisabled : styles.buttonPrimary}
               onClick={startSynthesize}
-              disabled={!canSynthesize || (synthesizeSession && synthesizeSession.status === 'running')}
+              disabled={!selectedDir || !!(synthesizeSession && synthesizeSession.status === 'running')}
             >
               Synthesize
             </button>
@@ -522,24 +441,42 @@ export default function SynthesizePage() {
             ) : null}
           </div>
 
-          {loadingContent && (
-            <div style={styles.loading}>Loading file content...</div>
-          )}
-
-          {!loadingContent && fileContent.length > 0 && (
-            <div style={styles.contentArea}>
-              <h2 style={styles.contentTitle}>File Content:</h2>
-              <ul style={styles.lineList}>
-                {fileContent.map((line, index) => (
-                  <li key={index} style={styles.lineItem}>{line}</li>
-                ))}
-              </ul>
+          {!hasSelection ? (
+            <div style={styles.emptyPicker} onClick={openPicker}>
+              <div>Click to select directory</div>
             </div>
-          )}
-
-          {!loadingContent && fileContent.length === 0 && !selectedFile && (
-            <div style={styles.emptyMessage}>
-              No file selected. Please select a file to view its content.
+          ) : (
+            <div style={styles.paneContainer}>
+              <div style={styles.leftPane}>
+                <div style={styles.leftHeader}>
+                  <span>Selected files</span>
+                  <button onClick={openPicker} style={styles.linkButton}>Change</button>
+                </div>
+                <div style={styles.leftList}>
+                  {selectedPaths.map((p) => (
+                    <div
+                      key={p}
+                      onClick={() => setActivePath(p)}
+                      style={p === activePath ? styles.listItemActive : styles.listItem}
+                      title={p}
+                    >
+                      {p.split('/').pop()}
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div style={styles.rightPane}>
+                <div style={styles.rightHeader}>{activePath || 'No file selected'}</div>
+                <div style={styles.viewer}>
+                  {activePath ? (
+                    loadingContent && !fileContents[activePath] ? (
+                      <div>Loading…</div>
+                    ) : (
+                      <pre style={styles.pre}>{fileContents[activePath] || ''}</pre>
+                    )
+                  ) : null}
+                </div>
+              </div>
             </div>
           )}
         </>
@@ -554,10 +491,27 @@ export default function SynthesizePage() {
               <div style={styles.logBox}>
                 <pre style={styles.pre} dangerouslySetInnerHTML={{ __html: ansiToHtml(logLines.join('\n')) }} />
               </div>
+              <div style={styles.inputRow}>
+                <input
+                  type="text"
+                  value={inputText}
+                  onChange={(e) => setInputText(e.target.value)}
+                  placeholder="Type response for synthesize script…"
+                  style={styles.textInput}
+                  disabled={synthesizeSession.status !== 'running'}
+                  onKeyDown={(e) => { if (e.key === 'Enter') submitInput(); }}
+                />
+                <button onClick={submitInput} style={styles.buttonSecondary} disabled={!inputText || synthesizeSession.status !== 'running'}>
+                  Send
+                </button>
+              </div>
             </div>
           ) : (
-            <div style={styles.emptyMessage}>
-              No synthesis session running. Go to the Source file tab to start one.
+            <div style={styles.emptyState}>
+              <div>No synthesize session yet.</div>
+              <div style={{ marginTop: 8, fontSize: 14, color: '#888' }}>
+                Select a directory in the Source files tab and click Synthesize to see results here.
+              </div>
             </div>
           )}
         </>
@@ -569,6 +523,29 @@ export default function SynthesizePage() {
 }
 
 const styles = {
+  selectedDirBar: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 8
+  },
+  selectedDirLabel: {
+    color: '#555'
+  },
+  selectedDirValue: {
+    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+    fontSize: 12,
+    color: '#333'
+  },
+  synthesizeBar: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 16
+  },
+  runStatus: {
+    color: '#666'
+  },
   tabsHeader: {
     display: 'flex',
     gap: 8,
@@ -591,217 +568,208 @@ const styles = {
     borderRadius: 6,
     cursor: 'pointer'
   },
-  controls: {
-    marginBottom: '20px',
-    display: 'flex',
-    alignItems: 'center',
-    gap: '15px',
-  },
-  synthesizeBar: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 12,
-    marginBottom: 16
-  },
-  runStatus: {
-    color: '#666'
-  },
-  selectButton: {
-    padding: '10px 20px',
-    backgroundColor: '#2563eb',
-    color: 'white',
-    border: 'none',
-    borderRadius: '6px',
-    cursor: 'pointer',
-    fontSize: '14px',
-    fontWeight: '500',
-  },
-  synthesizeButton: {
-    padding: '10px 20px',
-    backgroundColor: '#16a34a',
-    color: 'white',
-    border: 'none',
-    borderRadius: '6px',
-    cursor: 'pointer',
-    fontSize: '14px',
-    fontWeight: '500',
-  },
-  synthesizeButtonDisabled: {
-    padding: '10px 20px',
-    backgroundColor: '#d1d5db',
-    color: '#6b7280',
-    border: 'none',
-    borderRadius: '6px',
-    cursor: 'not-allowed',
-    fontSize: '14px',
-    fontWeight: '500',
-  },
-  selectedFileLabel: {
-    fontSize: '14px',
-    color: '#6b7280',
-  },
-  contentArea: {
-    marginTop: '20px',
-    padding: '20px',
-    backgroundColor: '#f9fafb',
-    borderRadius: '8px',
-    border: '1px solid #e5e7eb',
-  },
-  contentTitle: {
-    fontSize: '18px',
-    fontWeight: '600',
-    marginBottom: '15px',
-    color: '#1f2937',
-  },
-  lineList: {
-    listStyleType: 'decimal',
-    paddingLeft: '30px',
-    margin: 0,
-  },
-  lineItem: {
-    padding: '8px 0',
-    borderBottom: '1px solid #e5e7eb',
-    fontSize: '14px',
-    lineHeight: '1.5',
-    color: '#374151',
-  },
-  emptyMessage: {
-    padding: '40px',
+  emptyPicker: {
+    border: '2px dashed #bbb',
+    borderRadius: 8,
+    padding: 24,
     textAlign: 'center',
-    color: '#6b7280',
-    fontSize: '14px',
+    color: '#666',
+    cursor: 'pointer'
   },
-  loading: {
-    padding: '20px',
-    textAlign: 'center',
-    color: '#6b7280',
+  paneContainer: {
+    display: 'grid',
+    gridTemplateColumns: '280px 1fr',
+    gap: 16,
+    minHeight: 480
   },
-  logContainer: {
-    display: 'flex',
-    flexDirection: 'column',
-    height: '70vh',
+  leftPane: {
     border: '1px solid #e2e2e2',
     borderRadius: 8,
-    overflow: 'hidden'
+    overflow: 'hidden',
+    display: 'flex',
+    flexDirection: 'column'
   },
-  logHeader: {
+  leftHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     padding: '8px 12px',
-    background: '#fafafa',
     borderBottom: '1px solid #eee',
-    fontWeight: 500
+    background: '#fafafa'
   },
-  logBox: {
-    flex: 1,
+  leftList: {
+    overflow: 'auto'
+  },
+  listItem: {
+    padding: '8px 12px',
+    cursor: 'pointer',
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis'
+  },
+  listItemActive: {
+    padding: '8px 12px',
+    cursor: 'pointer',
+    background: '#eef3ff',
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis'
+  },
+  rightPane: {
+    border: '1px solid #e2e2e2',
+    borderRadius: 8,
+    overflow: 'hidden',
+    display: 'flex',
+    flexDirection: 'column'
+  },
+  rightHeader: {
+    padding: '8px 12px',
+    borderBottom: '1px solid #eee',
+    background: '#fafafa',
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis'
+  },
+  viewer: {
+    height: 520,
     overflow: 'auto',
-    padding: 12,
-    background: '#1e1e1e',
-    color: '#d4d4d4',
-    fontSize: 13,
-    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace'
+    padding: 12
   },
   pre: {
     margin: 0,
-    whiteSpace: 'pre-wrap',
-    wordBreak: 'break-word'
+    whiteSpace: 'pre',
+    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+    fontSize: 13
   },
-  modal: {
+  modalOverlay: {
     position: 'fixed',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    inset: 0,
+    background: 'rgba(0,0,0,0.4)',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    zIndex: 1000,
+    zIndex: 1000
   },
-  modalContent: {
-    backgroundColor: 'white',
-    borderRadius: '12px',
-    width: '600px',
+  modal: {
+    background: '#fff',
+    borderRadius: 10,
+    width: 720,
     maxHeight: '80vh',
     display: 'flex',
     flexDirection: 'column',
-    boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
+    overflow: 'hidden',
+    border: '1px solid #e5e5e5'
   },
   modalHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: '20px',
-    borderBottom: '1px solid #e5e7eb',
+    padding: '12px 16px',
+    borderBottom: '1px solid #eee',
+    background: '#fafafa',
+    fontWeight: 600
   },
-  modalTitle: {
-    margin: 0,
-    fontSize: '20px',
-    fontWeight: '600',
-    color: '#1f2937',
-  },
-  closeButton: {
-    background: 'none',
-    border: 'none',
-    fontSize: '28px',
-    cursor: 'pointer',
-    color: '#6b7280',
-    padding: '0',
-    width: '30px',
-    height: '30px',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: '4px',
-  },
-  pathBar: {
-    padding: '15px 20px',
-    backgroundColor: '#f9fafb',
-    borderBottom: '1px solid #e5e7eb',
-    display: 'flex',
-    alignItems: 'center',
-    gap: '10px',
-  },
-  upButton: {
-    padding: '6px 12px',
-    backgroundColor: '#e5e7eb',
-    border: 'none',
-    borderRadius: '4px',
-    cursor: 'pointer',
-    fontSize: '14px',
-  },
-  selectDirButton: {
-    padding: '6px 12px',
-    backgroundColor: '#2563eb',
-    color: 'white',
-    border: 'none',
-    borderRadius: '4px',
-    cursor: 'pointer',
-    fontSize: '14px',
-    marginLeft: 'auto',
-  },
-  currentPath: {
-    fontSize: '14px',
-    color: '#374151',
-    fontFamily: 'monospace',
+  modalBody: {
+    padding: 16,
+    overflow: 'hidden'
   },
   fileList: {
-    flex: 1,
-    overflowY: 'auto',
-    padding: '10px',
+    overflow: 'auto',
+    maxHeight: '50vh',
+    border: '1px solid #eee',
+    borderRadius: 6,
+    padding: 8
   },
-  fileItem: {
-    padding: '12px',
+  dirRow: {
+    padding: '6px 4px',
+    cursor: 'pointer'
+  },
+  dirName: {
+    fontWeight: 600
+  },
+  checkboxRow: {
     display: 'flex',
     alignItems: 'center',
-    gap: '10px',
+    gap: 8,
+    padding: '6px 4px'
+  },
+  checkboxLabel: {
+    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+    fontSize: 12
+  },
+  modalFooter: {
+    padding: 12,
+    display: 'flex',
+    gap: 8,
+    justifyContent: 'flex-end',
+    borderTop: '1px solid #eee'
+  },
+  buttonPrimary: {
+    padding: '6px 12px',
+    background: '#2b5cff',
+    color: '#fff',
+    border: 'none',
+    borderRadius: 6,
+    cursor: 'pointer'
+  },
+  buttonPrimaryDisabled: {
+    padding: '6px 12px',
+    background: '#ccc',
+    color: '#888',
+    border: 'none',
+    borderRadius: 6,
+    cursor: 'not-allowed'
+  },
+  emptyState: {
+    border: '2px dashed #bbb',
+    borderRadius: 8,
+    padding: 48,
+    textAlign: 'center',
+    color: '#666',
+    marginTop: 16
+  },
+  buttonSecondary: {
+    padding: '6px 12px',
+    background: '#f3f4f6',
+    color: '#111',
+    border: '1px solid #e5e7eb',
+    borderRadius: 6,
+    cursor: 'pointer'
+  },
+  linkButton: {
+    background: 'transparent',
+    border: 'none',
+    color: '#2b5cff',
     cursor: 'pointer',
-    borderRadius: '6px',
-    transition: 'background-color 0.15s',
+    padding: 0
   },
-  fileIcon: {
-    fontSize: '20px',
+  logContainer: {
+    marginTop: 16,
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 8
   },
-  fileName: {
-    fontSize: '14px',
-    color: '#374151',
+  logBox: {
+    border: '1px solid #e2e2e2',
+    borderRadius: 8,
+    padding: 12,
+    height: 440,
+    overflow: 'auto',
+    background: '#0b1020',
+    color: '#e5e7eb'
   },
+  logHeader: {
+    padding: '8px 12px',
+    border: '1px solid #e2e2e2',
+    borderRadius: 8,
+    background: '#fafafa',
+    color: '#666'
+  },
+  inputRow: {
+    display: 'flex',
+    gap: 8
+  },
+  textInput: {
+    flex: 1,
+    padding: '6px 10px',
+    border: '1px solid #e5e7eb',
+    borderRadius: 6
+  }
 };

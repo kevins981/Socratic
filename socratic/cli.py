@@ -1,6 +1,5 @@
 import argparse
 import sys
-from .ingest import build_ingest_parser, run_ingest
 from .synth import build_synth_parser, run_synth
 from .create import build_create_parser, run_create
 from .compose import build_compose_parser, run_compose
@@ -13,7 +12,7 @@ def build_root_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "command",
-        choices=["ingest", "synth", "create", "compose"],
+        choices=["synth", "create", "compose"],
         help="Subcommand to run",
     )
     return parser
@@ -29,13 +28,6 @@ def main() -> None:
     root_args, _ = root_parser.parse_known_args(sys.argv[1:2])
 
     command = root_args.command
-
-    if command == "ingest":
-        sub_parser = build_ingest_parser()
-        sub_args = sub_parser.parse_args(sys.argv[2:])
-        print(f"[INFO] Using model: {sub_args.model}")
-        run_ingest(sub_args)
-        return
 
     if command == "synth":
         sub_parser = build_synth_parser()

@@ -9,13 +9,9 @@ export async function POST(req) {
   try {
     const body = await req.json();
     const inputDir = (body?.inputDir || '').trim();
-    const keyConceptsFile = (body?.keyConceptsFile || '').trim();
     
     if (!inputDir) {
       return NextResponse.json({ error: 'Missing inputDir' }, { status: 400 });
-    }
-    if (!keyConceptsFile) {
-      return NextResponse.json({ error: 'Missing keyConceptsFile' }, { status: 400 });
     }
 
     const projectName = process.env.PROJECT_NAME || 'Socratic Project';
@@ -24,17 +20,16 @@ export async function POST(req) {
     const repoRoot = path.resolve(webCwd, '..');
 
     const args = [
+      '-u', // Unbuffered output for real-time streaming
       '-m', 'socratic.cli', 'synth',
       '--model', 'gpt-5-mini',
       '--input_dir', inputDir,
-      '--project', projectName,
-      '--key_concepts', keyConceptsFile,
-      '-n', '4'
+      '--project', projectName
     ];
     
     const child = spawn('python3', args, {
       cwd: repoRoot,
-      env: { ...process.env },
+      env: { ...process.env, PYTHONUNBUFFERED: '1' },
       stdio: ['pipe', 'pipe', 'pipe']
     });
 

@@ -4,6 +4,7 @@
   "version": "0.1.0",
   "scripts": {
     "dev": "next dev",
+    "dev:project": "node scripts/dev-with-project.js",
     "build": "next build",
     "start": "next start"
   },

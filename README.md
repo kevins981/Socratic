@@ -77,23 +77,21 @@ export OPENAI_API_KEY="your_api_key_here"
 # 0. Create project
 socratic-cli create --name airline_demo
 
-# 1. Ingest source files
+# 1. Synthesis
 # Source documents are stored in examples/repos/tau_airline
-socratic-cli ingest --model gpt-5-mini --input_dir examples/repos/tau_airline/ --project airline_demo
-
-# 2. Run synthesis
-# gpt-5 recommended for better quality
-# Be careful: if there are many concepts in concept.txt and the size of source documents
-# is large, this step may consume non-trivial amount of API tokens. Recommend starting small 
-# to get a sense of the cost first.
 socratic-cli synth --model gpt-5 \
   --input_dir examples/repos/tau_airline \
   --project airline_demo \
-  --key_concepts projects/airline_demo/concepts.txt \
   -n 4
 
-# 3. Compose agent knowledge prompt
+# 2. Compose agent knowledge prompt
 socratic-cli compose --project airline_demo --model gpt-5
+```
+
+Web UI:
+```bash
+cd web
+npm run dev:project -- --project airline_demo
 ```
 
 ## Privacy & Security

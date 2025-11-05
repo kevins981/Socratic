@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { ingestSessionStore } from '../sessionStore';
+import { synthesizeSessionStore } from '../sessionStore';
 
 export const runtime = 'nodejs';
 
@@ -11,7 +11,7 @@ export async function POST(req) {
     if (!sessionId) {
       return NextResponse.json({ error: 'Missing sessionId' }, { status: 400 });
     }
-    const sess = ingestSessionStore.getSession(sessionId);
+    const sess = synthesizeSessionStore.getSession(sessionId);
     if (!sess || !sess.child) {
       return NextResponse.json({ error: 'Invalid session' }, { status: 404 });
     }
@@ -25,5 +25,4 @@ export async function POST(req) {
     return NextResponse.json({ error: err?.message || 'Failed to submit input' }, { status: 500 });
   }
 }
-
 

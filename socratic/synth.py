@@ -11,6 +11,7 @@ from openai import OpenAI
 
 from .constants import MAX_KEY_PROCESSES_PER_PLAYBOOK
 from .io_utils import save_as, print_status, print_agent_block
+from .ingest import run_ingest
 
 
 Concept = {
@@ -197,11 +198,6 @@ def build_synth_parser() -> argparse.ArgumentParser:
         default=4,
         help="Maximum number of concurrent workers to use.",
     )
-    parser.add_argument(
-        "--key_concepts",
-        required=True,
-        help="Path to a file with key concepts, one per line.",
-    )
     return parser
 
 
@@ -309,7 +305,6 @@ def run_synth(args: argparse.Namespace) -> None:
 
     directory = Path(args.input_dir)
     print(f"[INFO] Working directory: {directory}")
-    print(f"[INFO] ### Using provided key concepts file: {args.key_concepts}")
 
     # Validate project directory under projects/
     project_dir = Path("projects") / args.project
@@ -317,12 +312,19 @@ def run_synth(args: argparse.Namespace) -> None:
         raise SystemExit(
             f"Project '{args.project}' not found under projects/. Please create 'projects/{args.project}' and try again."
         )
-    key_concepts_path = Path(args.key_concepts)
+    
+    # Run ingest first to generate concepts.txt
+    print(f"[INFO] Running ingest stage to generate key concepts...")
+    run_ingest(args)
+    
+    # Automatically load concepts.txt from project directory
+    key_concepts_path = project_dir / "concepts.txt"
+    print(f"[INFO] ### Loading key concepts from: {key_concepts_path}")
     try:
         text = key_concepts_path.read_text(encoding="utf-8", errors="replace")
     except Exception as error:
         raise ValueError(
-            f"Failed to read --key_concepts file: {args.key_concepts}"
+            f"Failed to read concepts file: {key_concepts_path}"
         ) from error
     key_concepts = [line.strip() for line in text.splitlines() if line.strip()]
     print(f"[INFO] ### Loaded {len(key_concepts)} key concepts from file.")

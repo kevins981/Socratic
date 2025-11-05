@@ -30,6 +30,7 @@ export async function POST(req) {
     await writeFile(unitsFile, JSON.stringify(selectedUnits, null, 2), 'utf-8');
 
     const args = [
+      '-u', // Unbuffered output for real-time streaming
       '-m', 'socratic.cli', 'compose',
       '--project', projectName,
       '--model', 'gpt-5-mini',
@@ -38,7 +39,7 @@ export async function POST(req) {
     
     const child = spawn('python3', args, {
       cwd: repoRoot,
-      env: { ...process.env },
+      env: { ...process.env, PYTHONUNBUFFERED: '1' },
       stdio: ['pipe', 'pipe', 'pipe']
     });
 

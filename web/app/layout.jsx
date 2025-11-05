@@ -13,7 +13,6 @@ export default function RootLayout({ children }) {
             <div className="content">
               <aside className="sidebar">
                 <nav className="nav">
-                  <Link href="/ingest">Ingest</Link>
                   <Link href="/synthesize">Synthesize</Link>
                   <Link href="/compose">Compose</Link>
                 </nav>

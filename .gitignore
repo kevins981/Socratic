@@ -5,3 +5,7 @@ socratic/__pycache__/
 tmp/
 projects/
 dist/
+
+bin/
+web/.next/
+web/node_modules/

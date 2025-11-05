@@ -428,7 +428,7 @@ export default function IngestPage() {
           ) : null}
           <div style={styles.ingestBar}>
             <button
-              style={styles.buttonPrimary}
+              style={(!selectedDir || !!(ingestSession && ingestSession.status === 'running')) ? styles.buttonPrimaryDisabled : styles.buttonPrimary}
               onClick={startIngest}
               disabled={!selectedDir || !!(ingestSession && ingestSession.status === 'running')}
             >
@@ -506,7 +506,14 @@ export default function IngestPage() {
                 </button>
               </div>
             </div>
-          ) : null}
+          ) : (
+            <div style={styles.emptyState}>
+              <div>No ingest session yet.</div>
+              <div style={{ marginTop: 8, fontSize: 14, color: '#888' }}>
+                Select a directory in the Source files tab and click Ingest to see results here.
+              </div>
+            </div>
+          )}
         </>
       )}
 
@@ -701,6 +708,22 @@ const styles = {
     border: 'none',
     borderRadius: 6,
     cursor: 'pointer'
+  },
+  buttonPrimaryDisabled: {
+    padding: '6px 12px',
+    background: '#ccc',
+    color: '#888',
+    border: 'none',
+    borderRadius: 6,
+    cursor: 'not-allowed'
+  },
+  emptyState: {
+    border: '2px dashed #bbb',
+    borderRadius: 8,
+    padding: 48,
+    textAlign: 'center',
+    color: '#666',
+    marginTop: 16
   },
   buttonSecondary: {
     padding: '6px 12px',

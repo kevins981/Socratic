@@ -14,74 +14,21 @@ from .io_utils import save_as, print_status, print_agent_block
 from .ingest import run_ingest
 
 
-Concept = {
-    "type": "object",
-    "properties": {
-        "knowledge_unit_type": {"type": "string", "const": "concept"},
-        "name": {"type": "string"},
-        "summary": {"type": "string"},
-        # OpenAI API enforces all properties to be required. 
-        # use union with null to make the field optional.
-        # https://platform.openai.com/docs/guides/structured-outputs/supported-schemas
-        "key_relationships": {"type": ["string", "null"]},
-        "example_or_context": {"type": ["string", "null"]},
-    },
-    "required": ["knowledge_unit_type", "name", "summary", "key_relationships", "example_or_context"],
-    "additionalProperties": False,
-}
-
-Procedure = {
-    "type": "object",
-    "properties": {
-        "knowledge_unit_type": {"type": "string", "const": "procedure"},
-        "name": {"type": "string"},
-        "trigger": {"type": "string"},
-        "purpose": {"type": "string"},
-        "inputs_outputs": {"type": "string"},
-        "high_level_logical_flow_pseudo_code": {"type": "string"},
-        "edge_cases": {"type": ["string", "null"]},
-    },
-    "required": ["knowledge_unit_type", "name", "trigger", "purpose", "inputs_outputs", "high_level_logical_flow_pseudo_code", "edge_cases"],
-    "additionalProperties": False,
-}
-
-
-Policy = {
-    "type": "object",
-    "properties": {
-        "knowledge_unit_type": {"type": "string", "const": "policy"},
-        "name": {"type": "string"},
-        "definition": {"type": "string"},
-        "conditions": {"type": "string"},
-        "how_to_check_or_enforce": {"type": "string"},
-        "consequences": {"type": "string"},
-        "edge_cases": {"type": ["string", "null"]},
-    },
-    "required": ["knowledge_unit_type", "name", "definition", "conditions", "how_to_check_or_enforce", "consequences", "edge_cases"],
-    "additionalProperties": False,
-}
-
-Data = {
-    "type": "object",
-    "properties": {
-        "knowledge_unit_type": {"type": "string", "const": "data"},
-        "name": {"type": "string"},
-        "definition": {"type": "string"},
-        "attributes": {"type": "string"},
-        "relationships": {"type": "string"},
-        "usage_context": {"type": "string"},
-        "linked_processes_or_policies": {"type": ["string", "null"]},
-    },
-    "required": ["knowledge_unit_type", "name", "definition", "attributes", "relationships", "usage_context", "linked_processes_or_policies"],
-    "additionalProperties": False,
-}
 
 synth_schema = {
     "type": "object",
     "properties": {
         "knowledge_units": {
             "type": "array",
-            "items": {"anyOf": [Concept, Procedure, Policy, Data] },
+            "items": {
+                "type": "object",
+                "properties": {
+                    "heading": {"type": "string"},
+                    "body": {"type": "string"}
+                },
+                "required": ["heading", "body"],
+                "additionalProperties": False
+            },
         }
     },
     "required": ["knowledge_units"],
@@ -98,59 +45,25 @@ The Concept/topic to research: {concept}
 # Knowledge Unit Types
 When synthesizing knowledge from source documents, identify the most suitable **knowledge unit type** for each distinct piece of knowledge. Choose based on the nature of the information — whether it describes a concept, process, policy, or data relationship.
 
-Each knowledge unit should be self-contained and labeled with its type. The types of knowledge units are: Concept, Procedure, Policy/Rule, and Data.
+Each knowledge unit should be self-contained.
 
-Below are the types of knowledge units:
+Below are some examples of types of knowledge units you can use:
 
 ## 1. Concept
 Purpose: General descriptive or explanatory knowledge that doesn’t fit better as a process, policy/rule, or data.
 You are generating a **Concept Knowledge Unit**. Summarize the key idea and its purpose in the system. Explain what it is, why it matters, and how it connects to other system elements.
 
-Output Structure:
-- **Type:** Concept
-- **Name:** [Concise name]
-- **Summary:** What is the concept and what problem or purpose does it serve?
-- **Key Relationships (optional):** How does it relate to other concepts, data, or processes?
-- **Example or Context (optional):** Real or hypothetical example to illustrate it.
-
 ## 2. Procedure
 Purpose: Describes a dynamic process, workflow, or algorithm. Defines how something happens, step-by-step.
 You are generating a Procedure Knowledge Unit. Describe the process in terms of triggers, inputs/outputs, and logical flow.
-
-Output Structure:
-- **Type:** Procedure
-- **Name:** [Descriptive name of the process]
-- **Trigger:** What initiates this process?
-- **Purpose:** What this process achieves.
-- **Inputs/Outputs:** Key inputs required and results or artifacts produced.
-- **High-Level Logical Flow / Pseudo-code:** Step-by-step description or logical flow.
-- **Edge cases (optional):** Describe any edge cases that the process should handle.
 
 ## 3. Policy/Rule
 Purpose: Defines constraints, business rules, or conditional logic — what can or cannot happen.
 You are generating a Policy or Rule Knowledge Unit. Define the rule, its conditions, and consequences for violations.
 
-Output Structure:
-- **Type:** Policy / Rule
-- **Name:** [Concise name]
-- **Definition:** The constraint, rule, or policy in clear terms.
-- **Applicability / Conditions:** When and to whom this rule applies.
-- **How to Check or Enforce:** Describe how compliance or violation can be detected.
-- **Consequences:** What happens when the rule is violated or satisfied.
-- **Edge cases (optional):** Describe any edge cases that the rule should handle.
-
 ## 4. Data
 Purpose: Defines data entities, their attributes, and relationships — what data exists and how it fits into the system.
 You are generating a Data Knowledge Unit. Describe a data entity and its relationships to others.
-
-Output Structure:
-- **Type:** Data
-- **Name:** [Concise name of the data entity]
-- **Definition:** What this data represents and its purpose.
-- **Attributes:** Key fields or attributes.
-- **Relationships:** How it connects to other data entities.
-- **Usage / Context:** How this data is used in the system.
-- **Linked Processes or Rules (optional):** References to where this data appears in processes or policies.
 
 
 When analyzing a document, you may find multiple knowledge unit types describing related aspects of one concept. 
@@ -298,6 +211,62 @@ def convert_synth_output_to_json(synth_output: str) -> dict:
     return output_json
 
 
+def consolidate(project_dir: Path, model: str = "gpt-5-mini"):
+    """
+    Read all concept*-synth.json files under project_dir, concatenate their raw
+    contents, and ask an LLM to consolidate them into a single JSON following
+    synth_schema. Saves to project_dir / 'synth-consolidated.json'.
+    """
+    files = sorted(project_dir.glob("concept*-synth.json"))
+    if not files:
+        print_status(f"No per-concept synth JSON files found in {project_dir}. Skipping consolidation.")
+        return
+
+    parts: list[str] = []
+    for fpath in files:
+        try:
+            text = fpath.read_text(encoding="utf-8", errors="replace")
+        except Exception as error:
+            raise ValueError(f"Failed to read synth JSON file: {fpath}") from error
+        parts.append(f"### {fpath.name}\n{text}")
+
+    combined = "\n\n".join(parts)
+
+    client = OpenAI()
+    prompt = (
+        "Consolidate the following JSON files into a single JSON output that follows the given schema. "
+        "You have the freedom to merge redundant knowledge units into a single knowledge unit. Do not create new knowledge units or delete any.\n\n"
+        f"Here are the JSON files to consolidate: \n {combined}"
+    )
+    print(f"[DEBUG] prompt: {prompt[:500]}...")
+
+
+    response = client.responses.create(
+        model=model,
+        reasoning={"effort": "minimal"},
+        input=prompt,
+        text={
+            "format": {
+                "type": "json_schema",
+                "name": "synth_schema",
+                "schema": synth_schema,
+            }
+        },
+    )
+
+    if hasattr(response, "usage") and response.usage:
+        print(f"[INFO] Token usage (consolidate): {response.usage}")
+
+    try:
+        output_json = json.loads(response.output_text)
+    except json.JSONDecodeError as error:
+        raise ValueError("Failed to parse LLM output as JSON in consolidate().") from error
+
+    out_path = project_dir / "synth-consolidated.json"
+    save_as(json.dumps(output_json, indent=2, ensure_ascii=False), out_path)
+    print_status(f"Saved consolidated synth JSON → {out_path.name}")
+    return out_path
+
 def run_synth(args: argparse.Namespace) -> None:
     # Check for required OPENAI_API_KEY environment variable
     if not os.environ.get("OPENAI_API_KEY"):
@@ -381,10 +350,15 @@ def run_synth(args: argparse.Namespace) -> None:
                 f"Saved results for concept {idx}: text → {text_path.name}, json → {json_path.name}"
             )
 
+    # After all workers are done, consolidate per-concept JSON files
+    print_status("Consolidating per-concept synth JSON files into a single JSON…")
+    consolidate(project_dir, model="gpt-5-mini")
+
 
 __all__ = [
     "build_synth_parser",
     "research_concept_design",
+    "consolidate",
     "run_synth",
 ]
 

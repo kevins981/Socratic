@@ -24,6 +24,7 @@ export default function SynthesizePage() {
   const [savingKnowledge, setSavingKnowledge] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [expandedUnits, setExpandedUnits] = useState(new Set()); // Set of expanded unit IDs
+  const [returnToTab, setReturnToTab] = useState(null); // Track which tab to return to after agent session
 
   function parseLogLinesToMessages(lines) {
     // Parse log lines into structured messages
@@ -377,18 +378,72 @@ export default function SynthesizePage() {
     }
   }
 
+  async function startModifyConcept(conceptId) {
+    if (synthesizeSession && synthesizeSession.status === 'running') return;
+    try {
+      // Close previous stream if any
+      try {
+        if (eventSourceRef.current) {
+          eventSourceRef.current.close();
+          eventSourceRef.current = null;
+        }
+      } catch {}
+      setLogLines([]);
+      const resp = await fetch('/api/modify-concept/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ conceptId })
+      });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data?.error || 'Failed to start modify concept');
+      const sessionId = data.sessionId;
+      setSynthesizeSession({ id: sessionId, status: 'running' });
+      setReturnToTab('knowledge');
+      setActiveTab('agent');
+      reconnectToSession(sessionId);
+    } catch (err) {
+      setLogLines((prev) => [...prev, `[ERR] ${err?.message || 'Failed to start modify concept'}`]);
+    }
+  }
+
   async function submitInput() {
     if (!synthesizeSession || synthesizeSession.status !== 'running' || !inputText) return;
     const text = inputText;
     setInputText('');
     // Echo user input to the console immediately
     setLogLines((prev) => [...prev, `› ${text}`]);
+    
+    // Check if user typed DONE to return to the previous tab
+    const isDone = text.trim().toUpperCase() === 'DONE';
+    
     try {
       await fetch('/api/synthesize/input', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sessionId: synthesizeSession.id, text })
       });
+      
+      // If DONE was submitted and we have a return tab, switch back after a short delay
+      if (isDone && returnToTab) {
+        setTimeout(async () => {
+          // Reload knowledge base data
+          try {
+            const kbResponse = await fetch('/api/knowledge-base');
+            const kbData = await kbResponse.json();
+            if (kbData.exists && kbData.data) {
+              setKnowledgeBase(kbData.data);
+              setEditedKnowledgeBase(kbData.data);
+              setHasKnowledgeChanges(false);
+            }
+          } catch (err) {
+            console.log('Error reloading knowledge base:', err);
+          }
+          
+          // Switch to the return tab
+          setActiveTab(returnToTab);
+          setReturnToTab(null);
+        }, 1000); // Wait 1 second for the process to complete
+      }
     } catch {}
   }
 
@@ -398,6 +453,26 @@ export default function SynthesizePage() {
       chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
     }
   }, [logLines]);
+
+  // Refresh knowledge base when switching to the knowledge tab
+  useEffect(() => {
+    if (activeTab === 'knowledge') {
+      const loadKnowledgeBase = async () => {
+        try {
+          const kbResponse = await fetch('/api/knowledge-base');
+          const kbData = await kbResponse.json();
+          if (kbData.exists && kbData.data) {
+            setKnowledgeBase(kbData.data);
+            setEditedKnowledgeBase(kbData.data);
+            setHasKnowledgeChanges(false);
+          }
+        } catch (err) {
+          console.log('Error loading knowledge base:', err);
+        }
+      };
+      loadKnowledgeBase();
+    }
+  }, [activeTab]);
 
   function toggleUnitExpanded(id) {
     setExpandedUnits((prev) => {
@@ -545,6 +620,13 @@ export default function SynthesizePage() {
                         <div style={styles.knowledgeUnitHeaderContent} onClick={() => !isExpanded && toggleUnitExpanded(unit.id)}>
                           <span style={styles.headingDisplay}>{unit.heading || 'Untitled'}</span>
                         </div>
+                        <button
+                          onClick={() => startModifyConcept(unit.id)}
+                          style={styles.modifyButton}
+                          disabled={synthesizeSession && synthesizeSession.status === 'running'}
+                        >
+                          Modify
+                        </button>
                       </div>
                       {isExpanded && (
                         <>
@@ -1058,5 +1140,15 @@ const styles = {
     fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
     resize: 'vertical',
     minHeight: 120
+  },
+  modifyButton: {
+    padding: '6px 12px',
+    background: '#f3f4f6',
+    color: '#111',
+    border: '1px solid #e5e7eb',
+    borderRadius: 6,
+    cursor: 'pointer',
+    fontSize: 13,
+    marginLeft: 8
   }
 };

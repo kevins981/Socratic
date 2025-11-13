@@ -84,6 +84,9 @@ socratic-cli synth --model gpt-5 \
   --project airline_demo \
   -n 4
 
+# Add 
+socratic-cli synth --model gpt-5-mini --project airline_demo --add_concept  "modification policy" --input_dir examples/repos/tau_airline/
+
 # 2. Compose agent knowledge prompt
 socratic-cli compose --project airline_demo --model gpt-5
 ```

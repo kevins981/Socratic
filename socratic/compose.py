@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 from pathlib import Path
+from types import BuiltinMethodType
 from typing import Any
 from openai import OpenAI
 from datetime import datetime
@@ -19,39 +19,35 @@ from .io_utils import save_as, print_status, print_agent_block
 
 def _get_unit_display_name(unit: dict) -> str:
     """Create a display name for a knowledge unit."""
-    knowledge_unit_type = unit.get("knowledge_unit_type", "unknown")
-    name = unit.get("name", "unnamed")
-    return f"[{knowledge_unit_type}] {name}"
+    knowledge_unit_type = unit.get("heading", "unknown")
+    body = unit.get("body", "unnamed")
+    return f"[{knowledge_unit_type}]"
 
 
 def _get_knowledge_units_from_files(project_dir: Path) -> list[tuple[dict, str]]:
     """
-    Extract all knowledge units from concept files.
+    Extract all knowledge units from synth-consolidated.json file.
     
     Returns a list of tuples: (knowledge_unit_dict, concept_file_name)
     """
-    pattern = re.compile(r"concept(\d+)-synth\.json$")
-    concept_files = []
-    for file_path in project_dir.iterdir():
-        if file_path.is_file() and pattern.match(file_path.name):
-            concept_files.append(file_path)
+    consolidated_file = project_dir / "synth-consolidated.json"
     
-    # Sort by concept number
-    concept_files.sort(key=lambda f: int(pattern.match(f.name).group(1)))
+    if not consolidated_file.exists():
+        print(f"[ERROR] File not found: {consolidated_file}")
+        return []
     
     all_units = []
-    for concept_file in concept_files:
-        try:
-            with open(concept_file, "r") as f:
-                data = json.load(f)
-            
-            knowledge_units = data.get("knowledge_units", [])
-            for unit in knowledge_units:
-                all_units.append((unit, concept_file.name))
-        except json.JSONDecodeError as e:
-            print(f"[ERROR] Failed to parse {concept_file.name}: {e}")
-        except Exception as e:
-            print(f"[ERROR] Error processing {concept_file.name}: {e}")
+    try:
+        with open(consolidated_file, "r") as f:
+            data = json.load(f)
+        
+        knowledge_units = data.get("knowledge_units", [])
+        for unit in knowledge_units:
+            all_units.append((unit, consolidated_file.name))
+    except json.JSONDecodeError as e:
+        print(f"[ERROR] Failed to parse {consolidated_file.name}: {e}")
+    except Exception as e:
+        print(f"[ERROR] Error processing {consolidated_file.name}: {e}")
     
     return all_units
 
@@ -78,7 +74,7 @@ def _select_knowledge_units_interactive(
     unit_map = {}  # Map display names to units
     for unit, concept_file in units:
         display_name = _get_unit_display_name(unit)
-        full_display = f"{display_name} ({concept_file})"
+        full_display = f"{display_name}"
         choices.append(full_display)
         unit_map[full_display] = unit
     

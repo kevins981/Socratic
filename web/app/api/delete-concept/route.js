@@ -20,7 +20,7 @@ export async function POST(req) {
 
     const args = [
       '-m', 'socratic.cli', 'synth',
-      '--model', 'gpt-5-mini',
+      '--model', 'gpt-5',
       '--project', projectName,
       '--delete_concept', String(conceptId)
     ];

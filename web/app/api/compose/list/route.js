@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { readdir, readFile } from 'fs/promises';
+import { readFile } from 'fs/promises';
 import path from 'path';
 
 export const runtime = 'nodejs';
@@ -11,42 +11,29 @@ export async function GET() {
     const repoRoot = path.resolve(webCwd, '..');
     const projectDir = path.join(repoRoot, 'projects', projectName);
 
-    // Read all files in the project directory
-    let files;
-    try {
-      files = await readdir(projectDir);
-    } catch (err) {
-      return NextResponse.json({ error: `Project directory not found: ${projectDir}` }, { status: 404 });
-    }
+    // Look for the consolidated synth file
+    const synthFile = 'synth-consolidated.json';
+    const synthFilePath = path.join(projectDir, synthFile);
 
-    // Filter for concept*-synth.json files and sort by concept number
-    const conceptPattern = /^concept(\d+)-synth\.json$/;
-    const conceptFiles = files
-      .filter(f => conceptPattern.test(f))
-      .map(f => {
-        const match = f.match(conceptPattern);
-        return { name: f, number: parseInt(match[1], 10) };
-      })
-      .sort((a, b) => a.number - b.number);
-
-    // Extract knowledge units from each file
+    // Extract knowledge units from the consolidated file
     const allUnits = [];
-    for (const { name } of conceptFiles) {
-      try {
-        const filePath = path.join(projectDir, name);
-        const content = await readFile(filePath, 'utf-8');
-        const data = JSON.parse(content);
-        
-        const knowledgeUnits = data.knowledge_units || [];
-        for (const unit of knowledgeUnits) {
-          allUnits.push({
-            unit: unit,
-            conceptFile: name
-          });
-        }
-      } catch (err) {
-        console.error(`Error processing ${name}:`, err.message);
+    try {
+      const content = await readFile(synthFilePath, 'utf-8');
+      const data = JSON.parse(content);
+      
+      const knowledgeUnits = data.knowledge_units || [];
+      for (const unit of knowledgeUnits) {
+        allUnits.push({
+          unit: unit,
+          conceptFile: synthFile
+        });
       }
+    } catch (err) {
+      if (err.code === 'ENOENT') {
+        return NextResponse.json({ error: `Synth file not found: ${synthFile}` }, { status: 404 });
+      }
+      console.error(`Error processing ${synthFile}:`, err.message);
+      return NextResponse.json({ error: `Failed to read synth file: ${err.message}` }, { status: 500 });
     }
 
     return NextResponse.json({ units: allUnits });

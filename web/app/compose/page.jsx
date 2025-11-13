@@ -265,9 +265,8 @@ export default function ComposePage() {
   }
 
   function getUnitDisplayName(unit) {
-    const knowledgeUnitType = unit.knowledge_unit_type || 'unknown';
-    const name = unit.name || 'unnamed';
-    return `[${knowledgeUnitType}] ${name}`;
+    const heading = unit.heading || 'unnamed';
+    return heading;
   }
 
   function renderValue(value) {
@@ -469,13 +468,15 @@ export default function ComposePage() {
                             {isExpanded ? '▼' : '▶'}
                           </span>
                           <span style={styles.unitLabel}>
-                            {getUnitDisplayName(item.unit)} <span style={styles.fileLabel}>({item.conceptFile})</span>
+                            {getUnitDisplayName(item.unit)}
                           </span>
                         </div>
                       </div>
                       {isExpanded && (
                         <div style={styles.expandedContent}>
-                          {renderJsonContent(item.unit)}
+                          <div style={styles.bodyText}>
+                            <ReactMarkdown>{item.unit.body || 'No content'}</ReactMarkdown>
+                          </div>
                         </div>
                       )}
                     </div>
@@ -660,6 +661,11 @@ const styles = {
     color: '#1f2937',
     maxHeight: '400px',
     overflowY: 'auto',
+  },
+  bodyText: {
+    lineHeight: '1.6',
+    whiteSpace: 'pre-wrap',
+    wordWrap: 'break-word',
   },
   jsonField: {
     marginBottom: '16px',

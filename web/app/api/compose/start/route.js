@@ -33,7 +33,7 @@ export async function POST(req) {
       '-u', // Unbuffered output for real-time streaming
       '-m', 'socratic.cli', 'compose',
       '--project', projectName,
-      '--model', 'gpt-5-mini',
+      '--model', 'gpt-5',
       '--units-json-file', unitsFile
     ];
     

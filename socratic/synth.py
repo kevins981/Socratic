@@ -14,7 +14,7 @@ from .constants import MAX_KEY_PROCESSES_PER_PLAYBOOK
 from .io_utils import save_as, print_status, print_agent_block, prompt_input
 from .ingest import run_ingest
 
-
+GLOBAL_CODEX_REASONING_EFFORT = "minimal"
 
 knowledge_units_schema = {
     "type": "object",
@@ -193,6 +193,8 @@ def research_concept_design(concept: str, model: str, directory: Path) -> tuple[
         str(directory.resolve()),
         "--model",
         model,
+        "--config",
+        f"model_reasoning_effort='{GLOBAL_CODEX_REASONING_EFFORT}'",
         "--json",
         instruction,
         # "--output-schema",
@@ -430,6 +432,8 @@ def modify_concept(args: argparse.Namespace, project_dir: Path) -> None:
         str(input_dir.resolve()),
         "--model",
         args.model,
+        "--config",
+        f"model_reasoning_effort='{GLOBAL_CODEX_REASONING_EFFORT}'",
         "--json",
         instruction
     ]
@@ -493,6 +497,8 @@ def modify_concept(args: argparse.Namespace, project_dir: Path) -> None:
             str(input_dir.resolve()),
             "--model",
             args.model,
+            "--config",
+            f"model_reasoning_effort='{GLOBAL_CODEX_REASONING_EFFORT}'",
             "--json",
             "resume",
             thread_id,
@@ -581,6 +587,8 @@ def add_concept(args: argparse.Namespace, project_dir: Path) -> None:
         str(input_dir.resolve()),
         "--model",
         args.model,
+        "--config",
+        f"model_reasoning_effort='{GLOBAL_CODEX_REASONING_EFFORT}'",
         "--json",
         instruction,
         # "--output-schema",
@@ -648,6 +656,8 @@ def add_concept(args: argparse.Namespace, project_dir: Path) -> None:
             str(input_dir.resolve()),
             "--model",
             args.model,
+            "--config",
+            f"model_reasoning_effort='{GLOBAL_CODEX_REASONING_EFFORT}'",
             "--json",
             "resume",
             thread_id,
@@ -766,7 +776,7 @@ def run_synth(args: argparse.Namespace) -> None:
         if args.modify_concept:
             if not args.input_dir:
                 raise SystemExit("--input_dir is required when using --modify_concept.")
-            if not args.concept_id:
+            if args.concept_id is None:
                 raise SystemExit("--concept_id is required when using --modify_concept.")
             modify_concept(args, project_dir)
             return

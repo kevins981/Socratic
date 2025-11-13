@@ -213,8 +213,8 @@ def build_synth_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--add_concept",
-        type=str,
-        help="Describe a knowledge unit to add (stubbed for now).",
+        action="store_true",
+        help="Add a knowledge unit interactively.",
     )
     parser.add_argument(
         "--modify_concept",
@@ -358,6 +358,33 @@ def research_all_concepts(concepts: list[str], model: str, directory: Path) -> t
 
     collected_output = "\n".join(collected_output)
     return text, collected_output, usage_dict
+
+
+
+def llm_generate_title(input_text: str) -> str:
+    """
+    Takes the raw text input and generates a title for it.
+    """
+    # print(f"[DEBUG] converting synth_output to JSON: {synth_output[:50]}...")
+    client = OpenAI()
+    prompt = f"""Generate a title for the following text.
+    
+    The input text:
+    {input_text}"""
+
+    response = client.responses.create(
+        model="gpt-5-mini",
+        reasoning={"effort": "minimal"},
+        input=prompt
+    )
+
+    # Print token usage
+    if hasattr(response, 'usage') and response.usage:
+        usage = response.usage
+        print(f"[INFO] llm_generate_title token usage: {usage}")
+
+    return response.output_text
+
 
 
 def convert_synth_output_to_json(synth_output: str) -> dict:
@@ -695,11 +722,14 @@ def add_concept(args: argparse.Namespace, project_dir: Path, input_dir: Path) ->
     shutil.copy(source_file, dest_file)
     print_status(f"Copied {source_file} → {dest_file}")
     
+    # Prompt user for concept to add
+    concept = prompt_input("What concept/topic would you like to add to the knowledge base?")
+    
     # Launch codex agent
     env = os.environ.copy()
     env["CODEX_API_KEY"] = os.environ["OPENAI_API_KEY"]
     
-    instruction = ADD_CONCEPT_AGENT_PROMPT.format(concept=args.add_concept)
+    instruction = ADD_CONCEPT_AGENT_PROMPT.format(concept=concept)
     
     command = [
         "codex",
@@ -820,13 +850,22 @@ def add_concept(args: argparse.Namespace, project_dir: Path, input_dir: Path) ->
     # User issued DONE command, meaning that they are happy with the final output of the agent. So grab that, convert to JSON, and add it to the existing knowledge base.
     print_status(f"Done. Adding new knowledge unit(s) to the existing knowledge base. This may take a few seconds...")
 
-    knowledge_units_to_add = convert_synth_output_to_json(last_text)
+    new_knowledge_unit_title = llm_generate_title(last_text)
+
+    new_knowledge_unit = {
+        "heading": new_knowledge_unit_title,
+        "body": last_text
+    }
+
     existing_knowledge_base_file = load_consolidated(project_dir)
     if existing_knowledge_base_file is None:
         raise ValueError("No existing knowledge base file found.")
+
     existing_knowledge_base = existing_knowledge_base_file.get("knowledge_units", [])
-    existing_knowledge_base.extend(knowledge_units_to_add.get("knowledge_units", []))
+    existing_knowledge_base.append(new_knowledge_unit)
     existing_knowledge_base_file["knowledge_units"] = existing_knowledge_base
+
+    existing_knowledge_base_file = ensure_ids(existing_knowledge_base_file)
     save_consolidated(project_dir, existing_knowledge_base_file)
     print_status(f"Added new knowledge unit(s) to the existing knowledge base.")
 

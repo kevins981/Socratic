@@ -82,7 +82,7 @@ socratic-cli create --name airline_demo --input_dir examples/repos/tau_airline
 socratic-cli synth --model gpt-5 --project airline_demo
 
 # Add a concept
-socratic-cli synth --model gpt-5-mini --project airline_demo --add_concept  "modification policy"
+socratic-cli synth --model gpt-5-mini --project airline_demo --add_concept
 
 # Modify a concept
 socratic-cli synth --model gpt-5-mini --project airline_demo --modify_concept --concept_id 1

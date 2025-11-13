@@ -15,7 +15,7 @@ export async function POST(req) {
     const args = [
       '-u', // Unbuffered output for real-time streaming
       '-m', 'socratic.cli', 'synth',
-      '--model', 'gpt-5-mini',
+      '--model', 'gpt-5',
       '--project', projectName,
       '--add_concept'
     ];

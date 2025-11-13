@@ -469,7 +469,7 @@ export default function SynthesizePage() {
           // Switch to the return tab
           setActiveTab(returnToTab);
           setReturnToTab(null);
-        }, 5000); // Wait 5 seconds for the process to complete
+        }, 3000); // Wait for the process to complete
       }
     } catch {}
   }

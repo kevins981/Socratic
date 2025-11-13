@@ -10,7 +10,7 @@ from pathlib import Path
 from openai import OpenAI
 
 from .constants import *
-from .io_utils import save_as, print_status, print_agent_block, prompt_input
+from .io_utils import save_as, print_status, print_agent_block, prompt_input, load_project_config
 from .ingest import run_ingest
 
 
@@ -182,12 +182,6 @@ def build_synth_parser() -> argparse.ArgumentParser:
         description=(
             "Synthesize design notes for key concepts in the provided input directory."
         ),
-    )
-    parser.add_argument(
-        "--input_dir",
-        # required=False,
-        default=None,
-        help="Path to the directory containing files to summarize.",
     )
     parser.add_argument(
         "--project",
@@ -497,9 +491,8 @@ def consolidate(project_dir: Path, model: str = "gpt-5-mini"):
     return out_path
 
 
-def modify_concept(args: argparse.Namespace, project_dir: Path) -> None:
+def modify_concept(args: argparse.Namespace, project_dir: Path, input_dir: Path) -> None:
     """Add a new knowledge unit by launching a codex agent to modify synth-consolidated.json."""
-    input_dir = Path(args.input_dir)
     
     # Create .socratic directory in input_dir
     socratic_dir = input_dir / ".socratic"
@@ -681,9 +674,8 @@ def modify_concept(args: argparse.Namespace, project_dir: Path) -> None:
     print_status(f"Replaced the existing knowledge unit with the new one.")
 
 
-def add_concept(args: argparse.Namespace, project_dir: Path) -> None:
+def add_concept(args: argparse.Namespace, project_dir: Path, input_dir: Path) -> None:
     """Add a new knowledge unit by launching a codex agent to modify synth-consolidated.json."""
-    input_dir = Path(args.input_dir)
     
     # Create .socratic directory in input_dir
     socratic_dir = input_dir / ".socratic"
@@ -895,19 +887,25 @@ def run_synth(args: argparse.Namespace) -> None:
             f"Project '{args.project}' not found under projects/. Please create 'projects/{args.project}' and try again."
         )
 
+    # Load project configuration to get input_dir
+    config = load_project_config(args.project)
+    input_dir_str = config.get("input_dir")
+    if not input_dir_str:
+        raise SystemExit(
+            f"input_dir not found in project configuration for '{args.project}'. "
+            "The project may be corrupted or was created with an older version."
+        )
+    input_dir = Path(input_dir_str)
+
     # CRUD mode: if any of the CRUD flags are present, skip ingest/synthesis flow.
     if getattr(args, "list_concepts", False) or args.delete_concept is not None or args.add_concept or args.modify_concept:
         if args.add_concept:
-            if not args.input_dir:
-                raise SystemExit("--input_dir is required when using --add_concept.")
-            add_concept(args, project_dir)
+            add_concept(args, project_dir, input_dir)
             return
         if args.modify_concept:
-            if not args.input_dir:
-                raise SystemExit("--input_dir is required when using --modify_concept.")
             if args.concept_id is None:
                 raise SystemExit("--concept_id is required when using --modify_concept.")
-            modify_concept(args, project_dir)
+            modify_concept(args, project_dir, input_dir)
             return
         if getattr(args, "list_concepts", False):
             list_concepts(project_dir)
@@ -921,7 +919,7 @@ def run_synth(args: argparse.Namespace) -> None:
         return
 
 
-    directory = Path(args.input_dir)
+    directory = input_dir
     print(f"[INFO] Working directory: {directory}")
 
     # Run ingest first to generate concepts.txt

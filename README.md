@@ -75,20 +75,17 @@ export OPENAI_API_KEY="your_api_key_here"
 
 ```bash
 # 0. Create project
-socratic-cli create --name airline_demo
+socratic-cli create --name airline_demo --input_dir examples/repos/tau_airline 
 
 # 1. Synthesis
 # Source documents are stored in examples/repos/tau_airline
-socratic-cli synth --model gpt-5 \
-  --input_dir examples/repos/tau_airline \
-  --project airline_demo \
-  -n 4
+socratic-cli synth --model gpt-5 --project airline_demo
 
 # Add a concept
-socratic-cli synth --model gpt-5-mini --project airline_demo --add_concept  "modification policy" --input_dir examples/repos/tau_airline/
+socratic-cli synth --model gpt-5-mini --project airline_demo --add_concept  "modification policy"
 
 # Modify a concept
-socratic-cli synth --model gpt-5-mini --project airline_demo --modify_concept --concept_id 1 --input_dir examples/repos/tau_airline/
+socratic-cli synth --model gpt-5-mini --project airline_demo --modify_concept --concept_id 1
 
 # Delete a concept
 socratic-cli synth --project airline_demo --delete_concept 1

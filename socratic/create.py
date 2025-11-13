@@ -17,6 +17,11 @@ def build_create_parser() -> argparse.ArgumentParser:
         required=True,
         help="Project name. Creates projects/{name} with default structure.",
     )
+    parser.add_argument(
+        "--input_dir",
+        required=True,
+        help="Path to the directory containing source files to research.",
+    )
     return parser
 
 
@@ -24,6 +29,11 @@ def run_create(args: argparse.Namespace) -> None:
     name = args.name.strip()
     if not name:
         raise ValueError("--name must be a non-empty string")
+
+    input_dir_raw = args.input_dir.strip()
+    if not input_dir_raw:
+        raise ValueError("--input_dir must be a non-empty string")
+    input_dir = Path(input_dir_raw).expanduser().resolve()
 
     base_dir = Path("projects") / name
 
@@ -34,7 +44,9 @@ def run_create(args: argparse.Namespace) -> None:
 
     # Create project.yaml with minimal metadata
     created_at = datetime.now().isoformat(timespec="seconds")
-    yaml_content = f"project_name: {name}\ncreated_at: {created_at}\n"
+    yaml_content = (
+        f"project_name: {name}\ncreated_at: {created_at}\ninput_dir: {input_dir}\n"
+    )
     save_as(yaml_content, base_dir / "project.yaml")
 
     print(f"[INFO] Created project at {base_dir.resolve()}")

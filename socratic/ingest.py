@@ -9,7 +9,7 @@ from openai import OpenAI
 import os
 
 from .constants import *
-from .io_utils import save_as, print_status, print_agent_block, prompt_input
+from .io_utils import save_as, print_status, print_agent_block, prompt_input, load_project_config
 
 INGEST_PLANNER_PROMPT = """Your purpose is to help the user collaboratively decide what broad topics to research — not to do deep research yourself. You act as an intelligent planning assistant that interprets the user’s intent, lightly inspects the provided materials, and proposes a structured list of high-level research themes (called "concepts") for the next stage (Knowledge Synthesis).
 
@@ -71,11 +71,6 @@ def build_ingest_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="socratic-cli ingest",
         description="Identify key concepts for the current directory.",
-    )
-    parser.add_argument(
-        "--input_dir",
-        required=True,
-        help="Path to the directory containing files to summarize.",
     )
     parser.add_argument(
         "--project",
@@ -233,17 +228,26 @@ def run_ingest(args: argparse.Namespace) -> None:
     if not os.environ.get("OPENAI_API_KEY"):
         raise SystemExit("OPENAI_API_KEY is required but not defined in the environment. Currenlty only OpenAI models are supported.")
 
-    directory = Path(args.input_dir)
-    print(f"[INFO] Working directory: {directory}")
-    if getattr(args, "specific_instructions", None):
-        print(f"[INFO] Specific instructions: {args.specific_instructions}")
-
     # Validate project directory under projects/
     project_dir = Path("projects") / args.project
     if not project_dir.exists() or not project_dir.is_dir():
         raise SystemExit(
             f"Project '{args.project}' not found under projects/. Please create 'projects/{args.project}' and try again."
         )
+
+    # Load project configuration to get input_dir
+    config = load_project_config(args.project)
+    input_dir_str = config.get("input_dir")
+    if not input_dir_str:
+        raise SystemExit(
+            f"input_dir not found in project configuration for '{args.project}'. "
+            "The project may be corrupted or was created with an older version."
+        )
+    directory = Path(input_dir_str)
+    
+    print(f"[INFO] Working directory: {directory}")
+    if getattr(args, "specific_instructions", None):
+        print(f"[INFO] Specific instructions: {args.specific_instructions}")
 
     # Prompt the user for initial input and capture it
     initial_user_input = prompt_input(

@@ -1,6 +1,44 @@
 from pathlib import Path
 import shutil
 import textwrap
+import yaml
+
+
+def load_project_config(project_name: str) -> dict:
+    """
+    Load project configuration from projects/{project_name}/project.yaml.
+    
+    Args:
+        project_name: Name of the project
+        
+    Returns:
+        Dictionary containing project metadata including input_dir
+        
+    Raises:
+        SystemExit: If project directory or project.yaml doesn't exist
+    """
+    project_dir = Path("projects") / project_name
+    if not project_dir.exists() or not project_dir.is_dir():
+        raise SystemExit(
+            f"Project '{project_name}' not found under projects/. "
+            f"Please create 'projects/{project_name}' and try again."
+        )
+    
+    config_path = project_dir / "project.yaml"
+    if not config_path.exists():
+        raise SystemExit(
+            f"project.yaml not found in {project_dir}. "
+            "The project may be corrupted."
+        )
+    
+    try:
+        with open(config_path, "r", encoding="utf-8") as f:
+            config = yaml.safe_load(f)
+        if not isinstance(config, dict):
+            raise SystemExit(f"Invalid project.yaml format in {project_dir}")
+        return config
+    except yaml.YAMLError as e:
+        raise SystemExit(f"Failed to parse project.yaml in {project_dir}: {e}")
 
 
 def save_as(content: str, path: Path | str) -> None:

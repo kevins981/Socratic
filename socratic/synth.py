@@ -57,7 +57,8 @@ MODIFY_CONCEPT_AGENT_PROMPT = """You are an expert Senior Staff Engineer and tec
 Your task is to analyze a provided system to investigate a specific "Concept". Your output will be consumed by another AI coding agent to perform tasks, so clarity, precision, and verifiability are paramount. The downstream agent has no room for ambiguity.
 
 IMPORTANT:
-There is an existing knowledge base of concepts stored in .socratic/synth-consolidated.json. You can use this to help you understand the existing concepts and how they are related to each other. As your final output, return the knowledge unit you wish to modify to. Use markdown format, NOT JSON format.
+- There is an existing knowledge base of concepts stored in .socratic/synth-consolidated.json. You can use this to help you understand the existing concepts and how they are related to each other. As your final output, return the knowledge unit you wish to modify to. Use markdown format, NOT JSON format.
+- ONLY do what the user asked you to do. DO NOT add any additional information or context that is not asked for. For instance, if the user asks you to modify/move/delete a specific bullet point, only modify/move/delete that bullet point. DO NOT do anything that is not asked for.
 
 You are given one knowledge unit that need to be modified and the user's requirements for the modification. Your goal is to modify this knowledge unit based on the user's requirements.
 
@@ -67,6 +68,7 @@ The user's requirements for the modification: {user_requirements}
 
 # Core Philosophy
 - Do not make up or infer any information. Only derive from the provided documents.
+- Concise, logical, and to the point.
 - Conceptual Focus, Implementation-Aware: Explain why and how at a systems level. Your explanations must be conceptual, but grounded in real evidence: code, documents, or configuration files. Use inline file and line number references to ground your explanations.
 - Define Before Use: Avoid vague terminology. Introduce new terms only after defining them precisely.
 - Anchor Concepts to Evidence: For each conceptual element, specify the system artifact(s)—e.g., code modules, design docs, architecture diagrams, or data schemas—that embody or describe that element.
@@ -89,6 +91,7 @@ The Concept/topic to research and add to the existing knowledge base: {concept}
 
 # Core Philosophy
 - Do not make up or infer any information. Only derive from the provided documents.
+- Concise, logical, and to the point.
 - Conceptual Focus, Implementation-Aware: Explain why and how at a systems level. Your explanations must be conceptual, but grounded in real evidence: code, documents, or configuration files. Use inline file and line number references to ground your explanations.
 - Define Before Use: Avoid vague terminology. Introduce new terms only after defining them precisely.
 - Anchor Concepts to Evidence: For each conceptual element, specify the system artifact(s)—e.g., code modules, design docs, architecture diagrams, or data schemas—that embody or describe that element.
@@ -165,10 +168,11 @@ Research all the provided concepts. You may organize the information in a way th
 
 # Core Philosophy
 - Do not make up or infer any information. Only derive from the provided documents.
+- Concise, logical, and to the point.
 - Conceptual Focus, Implementation-Aware: Explain why and how at a systems level. Your explanations must be conceptual, but grounded in real evidence: code, documents, or configuration files. Use inline file and line number references to ground your explanations.
 - Define Before Use: Avoid vague terminology. Introduce new terms only after defining them precisely.
 - Anchor Concepts to Evidence: For each conceptual element, specify the system artifact(s)—e.g., code modules, design docs, architecture diagrams, or data schemas—that embody or describe that element.
-- Verifiable Reasoning: Any logical flow or algorithm must be represented with verifiable pseudo-code or structured reasoning steps. Each must clearly map to system evidence.
+
 
 # Final Instructions
 - Generate your output in markdown format.
@@ -724,6 +728,8 @@ def add_concept(args: argparse.Namespace, project_dir: Path, input_dir: Path) ->
     
     # Prompt user for concept to add
     concept = prompt_input("What concept/topic would you like to add to the knowledge base?")
+
+    print_status(f"Agent in progress...")
     
     # Launch codex agent
     env = os.environ.copy()
@@ -904,7 +910,7 @@ def delete_concept(args: argparse.Namespace, project_dir: Path) -> None:
     units = data.get("knowledge_units", [])
     target_id = args.delete_concept
     
-    if not isinstance(target_id, int) or target_id < 1 or target_id > len(units):
+    if not isinstance(target_id, int) or target_id < 0 or target_id > len(units):
         print_status(f"Invalid ID: {target_id}. Use --list to see valid IDs.")
         return
     

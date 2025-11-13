@@ -406,6 +406,33 @@ export default function SynthesizePage() {
     }
   }
 
+  async function startAddConcept() {
+    if (synthesizeSession && synthesizeSession.status === 'running') return;
+    try {
+      // Close previous stream if any
+      try {
+        if (eventSourceRef.current) {
+          eventSourceRef.current.close();
+          eventSourceRef.current = null;
+        }
+      } catch {}
+      setLogLines([]);
+      const resp = await fetch('/api/add-concept/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data?.error || 'Failed to start add concept');
+      const sessionId = data.sessionId;
+      setSynthesizeSession({ id: sessionId, status: 'running' });
+      setReturnToTab('knowledge');
+      setActiveTab('agent');
+      reconnectToSession(sessionId);
+    } catch (err) {
+      setLogLines((prev) => [...prev, `[ERR] ${err?.message || 'Failed to start add concept'}`]);
+    }
+  }
+
   async function submitInput() {
     if (!synthesizeSession || synthesizeSession.status !== 'running' || !inputText) return;
     const text = inputText;
@@ -442,7 +469,7 @@ export default function SynthesizePage() {
           // Switch to the return tab
           setActiveTab(returnToTab);
           setReturnToTab(null);
-        }, 1000); // Wait 1 second for the process to complete
+        }, 5000); // Wait 5 seconds for the process to complete
       }
     } catch {}
   }
@@ -627,6 +654,13 @@ export default function SynthesizePage() {
                   style={hasKnowledgeChanges && !savingKnowledge ? styles.buttonPrimary : styles.buttonPrimaryDisabled}
                 >
                   {savingKnowledge ? 'Saving...' : 'Save'}
+                </button>
+                <button
+                  onClick={startAddConcept}
+                  disabled={synthesizeSession && synthesizeSession.status === 'running'}
+                  style={(synthesizeSession && synthesizeSession.status === 'running') ? styles.buttonPrimaryDisabled : styles.buttonPrimary}
+                >
+                  Add
                 </button>
                 {saveSuccess && <span style={styles.saveSuccessMessage}>Saved successfully!</span>}
               </div>

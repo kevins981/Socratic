@@ -475,7 +475,7 @@ export default function ComposePage() {
                       {isExpanded && (
                         <div style={styles.expandedContent}>
                           <div style={styles.bodyText}>
-                            <ReactMarkdown>{item.unit.body || 'No content'}</ReactMarkdown>
+                            <ReactMarkdown>{(item.unit.body || 'No content').trim()}</ReactMarkdown>
                           </div>
                         </div>
                       )}
@@ -664,7 +664,6 @@ const styles = {
   },
   bodyText: {
     lineHeight: '1.6',
-    whiteSpace: 'pre-wrap',
     wordWrap: 'break-word',
   },
   jsonField: {

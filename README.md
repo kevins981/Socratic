@@ -19,7 +19,8 @@ Building effective domain agents requires high-quality, domain-specific knowledg
 The goal of Socratic is to automate this process, enabling accurate and cost effective domain knowledge management.
 
 ## Demo
-https://youtu.be/BQv81sjv8Yo?si=r8xKQeFc8oL0QooV
+Using Socratic to build knowledge base for Google Analytics SQL agent:
+https://youtu.be/L20vOB3whMs
 
 ## Install from Pypi
 ```bash
@@ -43,6 +44,10 @@ pip install -e .
 ## Running
 Web UI (recommended):
 ```bash
+# 0. Create project
+socratic-cli create --name airline_demo --input_dir examples/repos/tau_airline 
+
+# 1. Launch web UI
 cd web
 npm run dev:project -- --project airline_demo
 ```

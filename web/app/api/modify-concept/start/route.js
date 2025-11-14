@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { spawn } from 'child_process';
 import path from 'path';
 import { synthesizeSessionStore } from '../../synthesize/sessionStore';
+import { DEFAULT_MODEL } from '../../../config';
 
 export const runtime = 'nodejs';
 
@@ -22,7 +23,7 @@ export async function POST(req) {
     const args = [
       '-u', // Unbuffered output for real-time streaming
       '-m', 'socratic.cli', 'synth',
-      '--model', 'gpt-5',
+      '--model', DEFAULT_MODEL,
       '--project', projectName,
       '--modify_concept',
       '--concept_id', String(conceptId)

@@ -4,6 +4,7 @@ import { spawn } from 'child_process';
 import path from 'path';
 import { writeFile, mkdtemp, rm } from 'fs/promises';
 import { tmpdir } from 'os';
+import { DEFAULT_MODEL } from '../../../config';
 
 export const runtime = 'nodejs';
 
@@ -33,7 +34,7 @@ export async function POST(req) {
       '-u', // Unbuffered output for real-time streaming
       '-m', 'socratic.cli', 'compose',
       '--project', projectName,
-      '--model', 'gpt-5',
+      '--model', DEFAULT_MODEL,
       '--units-json-file', unitsFile
     ];
     

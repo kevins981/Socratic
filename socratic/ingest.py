@@ -79,7 +79,7 @@ def build_ingest_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--model",
-        default="gpt-5",
+        default="gpt-5.1",
         help="OpenAI model to use.",
     )
     return parser

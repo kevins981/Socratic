@@ -194,7 +194,7 @@ def build_synth_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--model",
-        default="gpt-5",
+        default="gpt-5.1",
         help="OpenAI model to use.",
     )
     parser.add_argument(
@@ -377,8 +377,8 @@ def llm_generate_title(input_text: str) -> str:
     {input_text}"""
 
     response = client.responses.create(
-        model="gpt-5-mini",
-        reasoning={"effort": "minimal"},
+        model="gpt-5.1",
+        reasoning={"effort": "low"},
         input=prompt
     )
 
@@ -403,8 +403,8 @@ def convert_synth_output_to_json(synth_output: str) -> dict:
     {synth_output}"""
 
     response = client.responses.create(
-        model="gpt-5-mini",
-        reasoning={"effort": "minimal"},
+        model="gpt-5.1",
+        reasoning={"effort": "low"},
         input=prompt,
         text={
             "format": {
@@ -461,66 +461,6 @@ def ensure_ids(data: dict) -> dict:
         if isinstance(unit, dict):
             unit["id"] = index
     return data
-
-
-def consolidate(project_dir: Path, model: str = "gpt-5-mini"):
-    """
-    Read all concept*-synth.json files under project_dir, concatenate their raw
-    contents, and ask an LLM to consolidate them into a single JSON following
-    knowledge_units_schema. Saves to project_dir / 'synth-consolidated.json'.
-    """
-    files = sorted(project_dir.glob("concept*-synth.json"))
-    if not files:
-        print_status(f"No per-concept synth JSON files found in {project_dir}. Skipping consolidation.")
-        return
-
-    parts: list[str] = []
-    for fpath in files:
-        try:
-            text = fpath.read_text(encoding="utf-8", errors="replace")
-        except Exception as error:
-            raise ValueError(f"Failed to read synth JSON file: {fpath}") from error
-        parts.append(f"### {fpath.name}\n{text}")
-
-    combined = "\n\n".join(parts)
-
-    client = OpenAI()
-    prompt = (
-        "Consolidate the following JSON files into a single JSON output that follows the given schema. "
-        "You have the freedom to merge redundant knowledge units into a single knowledge unit. Do not create new knowledge units or delete any.\n\n"
-        f"Here are the JSON files to consolidate: \n {combined}"
-    )
-    # print(f"[DEBUG] prompt: {prompt[:500]}...")
-
-    response = client.responses.create(
-        model=model,
-        reasoning={"effort": "minimal"},
-        input=prompt,
-        text={
-            "format": {
-                "type": "json_schema",
-                "name": "knowledge_units_schema",
-                "schema": knowledge_units_schema,
-            }
-        },
-    )
-
-    if hasattr(response, "usage") and response.usage:
-        print(f"[INFO] Token usage (consolidate): {response.usage}")
-
-    try:
-        output_json = json.loads(response.output_text)
-    except json.JSONDecodeError as error:
-        raise ValueError("Failed to parse LLM output as JSON in consolidate().") from error
-    
-    # Assign ephemeral IDs before saving
-    output_json = ensure_ids(output_json)
-
-    out_path = project_dir / "synth-consolidated.json"
-    save_as(json.dumps(output_json, indent=2, ensure_ascii=False), out_path)
-    print_status(f"Saved consolidated synth JSON → {out_path.name}")
-    return out_path
-
 
 def modify_concept(args: argparse.Namespace, project_dir: Path, input_dir: Path) -> None:
     """Add a new knowledge unit by launching a codex agent to modify synth-consolidated.json."""

@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { spawn } from 'child_process';
 import path from 'path';
 
+import { DEFAULT_MODEL } from '../../config';
+
 export const runtime = 'nodejs';
 
 export async function POST(req) {
@@ -20,7 +22,7 @@ export async function POST(req) {
 
     const args = [
       '-m', 'socratic.cli', 'synth',
-      '--model', 'gpt-5',
+      '--model', DEFAULT_MODEL,
       '--project', projectName,
       '--delete_concept', String(conceptId)
     ];

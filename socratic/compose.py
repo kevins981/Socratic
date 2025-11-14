@@ -170,7 +170,7 @@ def build_compose_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--model",
-        default="gpt-5",
+        default="gpt-5.1",
         help="OpenAI model to use.",
     )
     parser.add_argument(

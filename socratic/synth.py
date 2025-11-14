@@ -378,7 +378,7 @@ def llm_generate_title(input_text: str) -> str:
 
     response = client.responses.create(
         model="gpt-5.1",
-        reasoning={"effort": "low"},
+        reasoning={"effort": "none"},
         input=prompt
     )
 
@@ -403,8 +403,8 @@ def convert_synth_output_to_json(synth_output: str) -> dict:
     {synth_output}"""
 
     response = client.responses.create(
-        model="gpt-5.1",
-        reasoning={"effort": "low"},
+        model="gpt-5-mini", # keeping this gpt 5 since 5.1 seems to have issues where it clusters everything into a single knowledge unit
+        reasoning={"effort": "minimal"}, 
         input=prompt,
         text={
             "format": {
@@ -481,7 +481,7 @@ def modify_concept(args: argparse.Namespace, project_dir: Path, input_dir: Path)
         )
     
     shutil.copy(source_file, dest_file)
-    print_status(f"Copied {source_file} → {dest_file}")
+    # print_status(f"Copied {source_file} → {dest_file}")
     
     # Grab the requested knowledge units from the consolidated file 
     existing_knowledge_base_file = load_consolidated(project_dir)

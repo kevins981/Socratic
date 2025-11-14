@@ -22,13 +22,13 @@ The goal of Socratic is to automate this process, enabling accurate and cost eff
 Using Socratic to build knowledge base for Google Analytics SQL agent:
 https://youtu.be/L20vOB3whMs
 
-## Install from Pypi
+## Install 
+From Pypi:
 ```bash
 pip install socratic-cli
 ```
 
-## Install from Source
-
+From Source:
 ```bash
 git clone https://github.com/kevins981/Socratic.git
 cd socratic
@@ -39,6 +39,20 @@ conda activate socratic
 
 # install
 pip install -e .
+```
+
+Install OpenAI Codex:
+```bash
+# might need sudo
+npm install -g @openai/codex
+```
+
+For Web-UI:
+```bash
+# if npm is not installed
+sudo apt install nodejs npm
+cd web
+npm install
 ```
 
 ## Running

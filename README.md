@@ -42,6 +42,8 @@ pip install -e .
 ```
 
 ## Running
+Assume that the project name is `airline_demo` and relevant source files are located in `examples/repos/tau_airline`.
+
 Web UI (recommended):
 ```bash
 # 0. Create project

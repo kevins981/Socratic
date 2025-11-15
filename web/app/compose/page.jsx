@@ -16,6 +16,10 @@ export default function ComposePage() {
   const [outputFilename, setOutputFilename] = useState('');
   const [loadingOutput, setLoadingOutput] = useState(false);
   const [copySuccess, setCopySuccess] = useState(false);
+  const [kbData, setKbData] = useState(null); // { name1: "prompt1", name2: "prompt2", ... }
+  const [selectedPromptName, setSelectedPromptName] = useState(null);
+  const [loadingKB, setLoadingKB] = useState(false);
+  const [kbKeysBeforeCompose, setKbKeysBeforeCompose] = useState(null); // Track KB keys before compose starts
   const eventSourceRef = useRef(null);
 
   // Load persisted state on mount
@@ -97,13 +101,25 @@ export default function ComposePage() {
     }
   }, [logLines]);
 
-  // Load output content when session status becomes 'exited'
+  // Load output content and switch to Output tab when session completes
   useEffect(() => {
     if (composeSession && composeSession.status === 'exited') {
       loadOutputFile();
+      // Switch to Output tab when compose completes
+      setActiveTab('output');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [composeSession?.status]);
+
+  // Load KB data whenever user clicks on Output tab
+  useEffect(() => {
+    if (activeTab === 'output') {
+      // Check if we just completed a compose session and should select new item
+      const shouldSelectNew = composeSession && composeSession.status === 'exited' && kbKeysBeforeCompose;
+      loadKBData(shouldSelectNew);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
 
   // Cleanup EventSource on unmount
   useEffect(() => {
@@ -227,6 +243,46 @@ export default function ComposePage() {
       setOutputFilename('');
     } finally {
       setLoadingOutput(false);
+    }
+  }
+
+  async function loadKBData(selectNewItem = false) {
+    setLoadingKB(true);
+    try {
+      const response = await fetch('/api/compose/kb');
+      if (response.ok) {
+        const data = await response.json();
+        setKbData(data.kbData || null);
+        // Select the appropriate prompt
+        if (data.kbData) {
+          const keys = Object.keys(data.kbData);
+          if (keys.length > 0) {
+            if (selectNewItem && kbKeysBeforeCompose) {
+              // Find the new key(s) that weren't in the previous KB
+              const newKeys = keys.filter(k => !kbKeysBeforeCompose.includes(k));
+              if (newKeys.length > 0) {
+                // Select the first new key
+                setSelectedPromptName(newKeys[0]);
+              } else {
+                // No new keys, select the first one
+                setSelectedPromptName(keys[0]);
+              }
+              // Clear the tracking
+              setKbKeysBeforeCompose(null);
+            } else {
+              // Default: select the first prompt
+              setSelectedPromptName(keys[0]);
+            }
+          }
+        }
+      } else {
+        setKbData(null);
+      }
+    } catch (err) {
+      console.error('Error loading KB data:', err);
+      setKbData(null);
+    } finally {
+      setLoadingKB(false);
     }
   }
 
@@ -376,6 +432,11 @@ export default function ComposePage() {
     const unitsToCompose = Array.from(selectedUnits).map(idx => allUnits[idx].unit);
     
     try {
+      // Save current KB keys before starting compose
+      if (kbData) {
+        setKbKeysBeforeCompose(Object.keys(kbData));
+      }
+      
       if (eventSourceRef.current) {
         eventSourceRef.current.close();
         eventSourceRef.current = null;
@@ -391,14 +452,15 @@ export default function ComposePage() {
       if (!resp.ok) throw new Error(data?.error || 'Failed to start compose');
       const sessionId = data.sessionId;
       setComposeSession({ id: sessionId, status: 'running' });
-      setActiveTab('output');
+      // Stay on Compose tab while running - will auto-switch when complete
       reconnectToSession(sessionId);
     } catch (err) {
       setLogLines((prev) => [...prev, `[ERR] ${err?.message || 'Failed to start compose'}`]);
     }
   }
 
-  const canCompose = selectedUnits.size > 0;
+  const isRunning = composeSession && composeSession.status === 'running';
+  const canCompose = selectedUnits.size > 0 && !isRunning;
 
   return (
     <div>
@@ -413,7 +475,7 @@ export default function ComposePage() {
             <button
               style={canCompose ? styles.composeButton : styles.composeButtonDisabled}
               onClick={startCompose}
-              disabled={!canCompose || (composeSession && composeSession.status === 'running')}
+              disabled={!canCompose}
             >
               Compose
             </button>
@@ -453,6 +515,7 @@ export default function ComposePage() {
                             toggleUnit(index);
                           }}
                           onClick={(e) => e.stopPropagation()}
+                          disabled={isRunning}
                           style={styles.checkbox}
                         />
                         <div
@@ -487,51 +550,53 @@ export default function ComposePage() {
           )}
         </>
       ) : (
-        // Output tab: file viewer
+        // Output tab: KB viewer
         <>
-          {composeSession ? (
-            <div style={styles.outputContainer}>
-              <div style={styles.outputHeader}>
-                <span>
-                  {composeSession.status === 'running' 
-                    ? 'Running…' 
-                    : composeSession.status === 'exited' 
-                      ? (outputFilename || 'Completed')
-                      : composeSession.status}
-                </span>
-                {composeSession.status === 'exited' && outputContent && outputContent !== 'NOT_YET_RUN' && (
-                  <button onClick={copyToClipboard} style={styles.copyButton}>
-                    {copySuccess ? '✓ Copied!' : 'Copy'}
-                  </button>
-                )}
+          {loadingKB ? (
+            <div style={styles.loading}>Loading knowledge base...</div>
+          ) : kbData && Object.keys(kbData).length > 0 ? (
+            // Two-pane viewer for KB prompts
+            <div style={styles.paneContainer}>
+              <div style={styles.leftPane}>
+                <div style={styles.leftHeader}>
+                  <span>Knowledge Base Prompts</span>
+                </div>
+                <div style={styles.leftList}>
+                  {Object.keys(kbData).map((name) => (
+                    <div
+                      key={name}
+                      onClick={() => setSelectedPromptName(name)}
+                      style={name === selectedPromptName ? styles.listItemActive : styles.listItem}
+                      title={name}
+                    >
+                      {name}
+                    </div>
+                  ))}
+                </div>
               </div>
-              <div style={styles.outputBox}>
-                {composeSession.status === 'running' ? (
-                  <div style={styles.generatingMessage}>Generating...</div>
-                ) : composeSession.status === 'exited' ? (
-                  loadingOutput ? (
-                    <div style={styles.generatingMessage}>Loading output...</div>
-                  ) : outputContent === 'NOT_YET_RUN' ? (
-                    <div style={styles.emptyStateMessage}>
-                      <div style={styles.emptyStateIcon}>📝</div>
-                      <div style={styles.emptyStateText}>No compose output yet</div>
-                      <div style={styles.emptyStateSubtext}>
-                        Run Compose from the Compose tab to generate output
-                      </div>
+              <div style={styles.rightPane}>
+                <div style={styles.rightHeader}>
+                  {selectedPromptName || 'No prompt selected'}
+                </div>
+                <div style={styles.viewer}>
+                  {selectedPromptName && kbData[selectedPromptName] ? (
+                    <div className="markdownContainer" style={styles.markdownContainer}>
+                      <ReactMarkdown>{kbData[selectedPromptName]}</ReactMarkdown>
                     </div>
                   ) : (
-                    <div className="markdownContainer" style={styles.markdownContainer}>
-                      <ReactMarkdown>{outputContent || 'No output generated'}</ReactMarkdown>
-                    </div>
-                  )
-                ) : (
-                  <div style={styles.generatingMessage}>Status: {composeSession.status}</div>
-                )}
+                    <div>No prompt selected</div>
+                  )}
+                </div>
               </div>
             </div>
           ) : (
-            <div style={styles.emptyMessage}>
-              No compose session running. Go to the Compose tab to start one.
+            // No KB data available
+            <div style={styles.emptyStateMessage}>
+              <div style={styles.emptyStateIcon}>📝</div>
+              <div style={styles.emptyStateText}>No compose output yet</div>
+              <div style={styles.emptyStateSubtext}>
+                Run Compose from the Compose tab to generate output
+              </div>
             </div>
           )}
         </>
@@ -760,5 +825,69 @@ const styles = {
   emptyStateSubtext: {
     fontSize: '14px',
     color: '#6b7280',
+  },
+  paneContainer: {
+    display: 'grid',
+    gridTemplateColumns: '280px 1fr',
+    gap: 16,
+    minHeight: 480
+  },
+  leftPane: {
+    border: '1px solid #e2e2e2',
+    borderRadius: 8,
+    overflow: 'hidden',
+    display: 'flex',
+    flexDirection: 'column'
+  },
+  leftHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: '8px 12px',
+    borderBottom: '1px solid #eee',
+    background: '#fafafa',
+    fontSize: 14
+  },
+  leftList: {
+    overflow: 'auto'
+  },
+  listItem: {
+    padding: '8px 12px',
+    cursor: 'pointer',
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    fontSize: 13
+  },
+  listItemActive: {
+    padding: '8px 12px',
+    cursor: 'pointer',
+    background: '#eef3ff',
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    fontSize: 13
+  },
+  rightPane: {
+    border: '1px solid #e2e2e2',
+    borderRadius: 8,
+    overflow: 'hidden',
+    display: 'flex',
+    flexDirection: 'column'
+  },
+  rightHeader: {
+    padding: '8px 12px',
+    borderBottom: '1px solid #eee',
+    background: '#fafafa',
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    fontSize: 13,
+    fontWeight: 500
+  },
+  viewer: {
+    height: 520,
+    overflow: 'auto',
+    padding: 12
   },
 };

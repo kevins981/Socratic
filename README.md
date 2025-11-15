@@ -19,6 +19,9 @@ Building effective domain agents requires high-quality, domain-specific knowledg
 The goal of Socratic is to automate this process, enabling accurate and cost effective domain knowledge management.
 
 ## Demo
+Using Socratic to build knowledge base to understand Socratic itself (3-min):
+https://youtu.be/R4YpbqQZlpU
+
 Using Socratic to build knowledge base for Google Analytics SQL agent:
 https://youtu.be/L20vOB3whMs
 

@@ -75,19 +75,19 @@ socratic-cli create --name airline_demo --input_dir examples/repos/tau_airline
 
 # 1. Synthesis
 # Source documents are stored in examples/repos/tau_airline
-socratic-cli synth --model gpt-5.1 --project airline_demo
+socratic-cli synth --project airline_demo
 
 # Add a concept
-socratic-cli synth --model gpt-5.1 --project airline_demo --add_concept
+socratic-cli synth --project airline_demo --add_concept
 
 # Modify a concept
-socratic-cli synth --model gpt-5.1 --project airline_demo --modify_concept --concept_id 1
+socratic-cli synth --project airline_demo --modify_concept --concept_id 1
 
 # Delete a concept
 socratic-cli synth --project airline_demo --delete_concept 1
 
 # 2. Compose agent knowledge prompt
-socratic-cli compose --project airline_demo --model gpt-5.1
+socratic-cli compose --project airline_demo
 ```
 
 ## OpenAI API

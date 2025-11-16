@@ -32,7 +32,6 @@ def main() -> None:
     if command == "synth":
         sub_parser = build_synth_parser()
         sub_args = sub_parser.parse_args(sys.argv[2:])
-        print(f"[INFO] Using model: {sub_args.model}")
         run_synth(sub_args)
         return
 
@@ -45,7 +44,6 @@ def main() -> None:
     if command == "compose":
         sub_parser = build_compose_parser()
         sub_args = sub_parser.parse_args(sys.argv[2:])
-        print(f"[INFO] Using model: {sub_args.model}")
         run_compose(sub_args)
         return
 

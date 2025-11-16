@@ -16,7 +16,6 @@ export async function POST(req) {
     const args = [
       '-u', // Unbuffered output for real-time streaming
       '-m', 'socratic.cli', 'synth',
-      '--model', DEFAULT_MODEL,
       '--project', projectName,
       '--add_concept'
     ];

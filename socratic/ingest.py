@@ -10,6 +10,7 @@ import os
 
 from .constants import *
 from .io_utils import save_as, print_status, print_agent_block, prompt_input, load_project_config
+from .llm_config import get_codex_config_options, load_llm_config
 
 INGEST_PLANNER_PROMPT = """Your purpose is to help the user collaboratively decide what broad topics to research — not to do deep research yourself. You act as an intelligent planning assistant that interprets the user’s intent, lightly inspects the provided materials, and proposes a structured list of high-level research themes (called "concepts") for the next stage (Knowledge Synthesis).
 
@@ -77,11 +78,6 @@ def build_ingest_parser() -> argparse.ArgumentParser:
         required=True,
         help="Project name; must match a folder under projects/",
     )
-    parser.add_argument(
-        "--model",
-        default="gpt-5.1",
-        help="OpenAI model to use.",
-    )
     return parser
 
 def plan_concepts_to_research(initial_user_input: str, model: str, directory: Path) -> str:
@@ -94,8 +90,11 @@ def plan_concepts_to_research(initial_user_input: str, model: str, directory: Pa
     Return the final list of concepts to research.
     """
 
+    # Get LLM provider configuration
+    config_options, env_key = get_codex_config_options()
+    
     env = os.environ.copy()
-    env["CODEX_API_KEY"] = os.environ["OPENAI_API_KEY"]
+    # env["CODEX_API_KEY"] = os.environ[env_key]
 
     instruction = INGEST_PLANNER_PROMPT.format(initial_user_input=initial_user_input)
 
@@ -106,11 +105,20 @@ def plan_concepts_to_research(initial_user_input: str, model: str, directory: Pa
         str(directory.resolve()),
         "--model",
         model,
-        "--config",
-        f"model_reasoning_effort='{GLOBAL_CODEX_REASONING_EFFORT}'",
+    ]
+    
+    # Add all config options
+    for config_opt in config_options:
+        command.extend(["--config", config_opt])
+
+    # Only add reasoning effort for OpenAI reasoning models
+    if "gpt-5" in model or "gpt-5.1" in model:
+        command.extend(["--config", f"model_reasoning_effort='{GLOBAL_CODEX_REASONING_EFFORT}'"])
+    
+    command.extend([
         "--json",
         instruction
-    ]
+    ])
 
     print_status("Planning concepts based on your input…")
     process = subprocess.Popen(
@@ -177,13 +185,22 @@ def plan_concepts_to_research(initial_user_input: str, model: str, directory: Pa
         str(directory.resolve()),
         "--model",
         model,
-        "--config",
-        f"model_reasoning_effort='{GLOBAL_CODEX_REASONING_EFFORT}'",
+    ]
+    
+    # Add all config options
+    for config_opt in config_options:
+        resume_command.extend(["--config", config_opt])
+    
+    # Only add reasoning effort for OpenAI reasoning models
+    if "gpt-5" in model or "gpt-5.1" in model:
+        resume_command.extend(["--config", f"model_reasoning_effort='{GLOBAL_CODEX_REASONING_EFFORT}'"])
+    
+    resume_command.extend([
         "--json",
         "resume",
         thread_id,
         user_feedback+".\nThis is the final feedback from the user. Only output the final list of concepts to research and do not generate any more questions asking for more feedback. ONLY print the final list of concepts to research and do not print anything else, such as 'Here is a list of...' or 'Would you like me to...'. In this final list, do not number the concepts. Just list the concepts one after another.\n Remember to use the format:\nConcept A. Context: ...\nConcept B. Context...\n..."
-    ]
+    ])
 
     print_status("Applying your feedback and finalizing…")
     process2 = subprocess.Popen(
@@ -224,9 +241,19 @@ def plan_concepts_to_research(initial_user_input: str, model: str, directory: Pa
 
 
 def run_ingest(args: argparse.Namespace) -> None:
-    # Check for required OPENAI_API_KEY environment variable
-    if not os.environ.get("OPENAI_API_KEY"):
-        raise SystemExit("OPENAI_API_KEY is required but not defined in the environment. Currenlty only OpenAI models are supported.")
+    # Load and print LLM configuration from .env
+    try:
+        llm_config = load_llm_config()
+        print(f"[INFO] LLM Configuration from .env:")
+        print(f"[INFO]   MODEL: {llm_config['model']}")
+        print(f"[INFO]   BASE_URL: {llm_config['base_url']}")
+        print(f"[INFO]   ENV_KEY: {llm_config['env_key']}")
+    except SystemExit as e:
+        # If .env loading fails, it will exit with appropriate error message
+        raise
+    
+    # Extract model from config
+    model = llm_config['model']
 
     # Validate project directory under projects/
     project_dir = Path("projects") / args.project
@@ -255,7 +282,7 @@ def run_ingest(args: argparse.Namespace) -> None:
     )
     # print(f"[INFO] Initial user input: {initial_user_input}")
 
-    key_concepts, codex_traj = plan_concepts_to_research(initial_user_input, args.model, directory)
+    key_concepts, codex_traj = plan_concepts_to_research(initial_user_input, model, directory)
 
     save_as(key_concepts, project_dir / "concepts.txt")
     save_as(codex_traj, project_dir / "concepts_traj.jsonl")

@@ -22,7 +22,6 @@ export async function POST(req) {
 
     const args = [
       '-m', 'socratic.cli', 'synth',
-      '--model', DEFAULT_MODEL,
       '--project', projectName,
       '--delete_concept', String(conceptId)
     ];

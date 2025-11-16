@@ -34,7 +34,6 @@ export async function POST(req) {
       '-u', // Unbuffered output for real-time streaming
       '-m', 'socratic.cli', 'compose',
       '--project', projectName,
-      '--model', DEFAULT_COMPOSE_MODEL,
       '--units-json-file', unitsFile
     ];
     

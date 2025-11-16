@@ -15,6 +15,7 @@ except ImportError:
     inquirer = None
 
 from .io_utils import save_as, print_status, print_agent_block
+from .llm_config import load_llm_config
 
 
 def _get_unit_display_name(unit: dict) -> str:
@@ -274,11 +275,6 @@ def build_compose_parser() -> argparse.ArgumentParser:
         help="Project name; must match a folder under projects/",
     )
     parser.add_argument(
-        "--model",
-        default="gpt-5", # not using gpt-5.1 because it's sometimes very slow
-        help="OpenAI model to use.",
-    )
-    parser.add_argument(
         "--units-json-file",
         default=None,
         help="Path to JSON file containing pre-selected knowledge units (for web UI mode). If not provided, uses interactive terminal selection.",
@@ -297,16 +293,26 @@ def build_compose_parser() -> argparse.ArgumentParser:
 
 
 def run_compose(args: argparse.Namespace) -> None:
-    # Check for required OPENAI_API_KEY environment variable
-    if not os.environ.get("OPENAI_API_KEY"):
-        raise SystemExit("OPENAI_API_KEY is required but not defined in the environment. Currenlty only OpenAI models are supported.")
+    # Load and print LLM configuration from .env
+    try:
+        llm_config = load_llm_config()
+        print(f"[INFO] LLM Configuration from .env:")
+        print(f"[INFO]   MODEL: {llm_config['model']}")
+        print(f"[INFO]   BASE_URL: {llm_config['base_url']}")
+        print(f"[INFO]   ENV_KEY: {llm_config['env_key']}")
+    except SystemExit as e:
+        # If .env loading fails, it will exit with appropriate error message
+        raise
+    
+    # Extract model from config
+    model = llm_config['model']
 
     project_dir = Path("projects") / args.project
     if not project_dir.exists() or not project_dir.is_dir():
         raise SystemExit(
             f"Project '{args.project}' not found under projects/. Please create 'projects/{args.project}' and try again."
         )
-    print(f"[INFO] Compose command with project: {args.project}, model: {args.model}")
+    print(f"[INFO] Compose command with project: {args.project}, model: {model}")
     
     # Determine output name
     if args.output_name:
@@ -352,7 +358,7 @@ def run_compose(args: argparse.Namespace) -> None:
             return
     
     # Pass selected units to compose_prompt
-    compose_prompt(selected_units, args.model, project_dir, output_name)
+    compose_prompt(selected_units, model, project_dir, output_name)
 
 
 __all__ = [

@@ -12,6 +12,7 @@ from openai import OpenAI
 from .constants import *
 from .io_utils import save_as, print_status, print_agent_block, prompt_input, load_project_config
 from .ingest import run_ingest
+from .llm_config import get_codex_config_options, load_llm_config
 
 
 knowledge_units_schema = {
@@ -193,11 +194,6 @@ def build_synth_parser() -> argparse.ArgumentParser:
         help="Project name; must match a folder under projects/",
     )
     parser.add_argument(
-        "--model",
-        default="gpt-5.1",
-        help="OpenAI model to use.",
-    )
-    parser.add_argument(
         "-n",
         "--workers",
         type=int,
@@ -302,8 +298,10 @@ def research_all_concepts(concepts: list[str], model: str, directory: Path) -> t
     Research all concepts at once using a single Codex agent call.
     Returns the consolidated result for all concepts.
     """
+    # Get LLM provider configuration
+    config_options, env_key = get_codex_config_options()
+    
     env = os.environ.copy()
-    env["CODEX_API_KEY"] = os.environ["OPENAI_API_KEY"]
 
     # Format concepts as a numbered list
     concepts_text = "\n".join(f"{i}. {concept}" for i, concept in enumerate(concepts))
@@ -316,11 +314,20 @@ def research_all_concepts(concepts: list[str], model: str, directory: Path) -> t
         str(directory.resolve()),
         "--model",
         model,
-        "--config",
-        f"model_reasoning_effort='{GLOBAL_CODEX_REASONING_EFFORT}'",
+    ]
+    
+    # Add all config options
+    for config_opt in config_options:
+        command.extend(["--config", config_opt])
+    
+    # Only add reasoning effort for OpenAI reasoning models
+    if "gpt-5" in model or "gpt-5.1" in model:
+        command.extend(["--config", f"model_reasoning_effort='{GLOBAL_CODEX_REASONING_EFFORT}'"])
+    
+    command.extend([
         "--json",
         instruction,
-    ]
+    ])
 
     process = subprocess.Popen(
         command,
@@ -462,7 +469,7 @@ def ensure_ids(data: dict) -> dict:
             unit["id"] = index
     return data
 
-def modify_concept(args: argparse.Namespace, project_dir: Path, input_dir: Path) -> None:
+def modify_concept(args: argparse.Namespace, project_dir: Path, input_dir: Path, model: str) -> None:
     """Add a new knowledge unit by launching a codex agent to modify synth-consolidated.json."""
     
     # Create .socratic directory in input_dir
@@ -513,8 +520,10 @@ def modify_concept(args: argparse.Namespace, project_dir: Path, input_dir: Path)
     # print(f"[DEBUG] modify agent instruction: {instruction}")
 
     # Launch codex agent
+    # Get LLM provider configuration (storing in modify-specific vars for use in resume commands)
+    config_options_modify, env_key_modify = get_codex_config_options()
+    
     env = os.environ.copy()
-    env["CODEX_API_KEY"] = os.environ["OPENAI_API_KEY"]
     
     # print(f"[DEBUG] modify agent instruction: {instruction}")
     
@@ -524,12 +533,21 @@ def modify_concept(args: argparse.Namespace, project_dir: Path, input_dir: Path)
         "--cd",
         str(input_dir.resolve()),
         "--model",
-        args.model,
-        "--config",
-        f"model_reasoning_effort='{GLOBAL_CODEX_REASONING_EFFORT}'",
+        model,
+    ]
+    
+    # Add all config options
+    for config_opt in config_options_modify:
+        command.extend(["--config", config_opt])
+    
+    # Only add reasoning effort for OpenAI reasoning models
+    if "gpt-5" in model or "gpt-5.1" in model:
+        command.extend(["--config", f"model_reasoning_effort='{GLOBAL_CODEX_REASONING_EFFORT}'"])
+    
+    command.extend([
         "--json",
         instruction
-    ]
+    ])
         
     process = subprocess.Popen(
         command,
@@ -589,14 +607,23 @@ def modify_concept(args: argparse.Namespace, project_dir: Path, input_dir: Path)
             "--cd",
             str(input_dir.resolve()),
             "--model",
-            args.model,
-            "--config",
-            f"model_reasoning_effort='{GLOBAL_CODEX_REASONING_EFFORT}'",
+            model,
+        ]
+        
+        # Add all config options
+        for config_opt in config_options_modify:
+            resume_command.extend(["--config", config_opt])
+        
+        # Only add reasoning effort for OpenAI reasoning models
+        if "gpt-5" in model or "gpt-5.1" in model:
+            resume_command.extend(["--config", f"model_reasoning_effort='{GLOBAL_CODEX_REASONING_EFFORT}'"])
+        
+        resume_command.extend([
             "--json",
             "resume",
             thread_id,
             user_feedback,
-        ]
+        ])
 
         print_status("Continuing agent with your input…")
         process2 = subprocess.Popen(
@@ -649,7 +676,7 @@ def modify_concept(args: argparse.Namespace, project_dir: Path, input_dir: Path)
     # print_status(f"Cleaned up temporary file: {dest_file}")
 
 
-def add_concept(args: argparse.Namespace, project_dir: Path, input_dir: Path) -> None:
+def add_concept(args: argparse.Namespace, project_dir: Path, input_dir: Path, model: str) -> None:
     """Add a new knowledge unit by launching a codex agent to modify synth-consolidated.json."""
     
     # Create .socratic directory in input_dir
@@ -676,8 +703,10 @@ def add_concept(args: argparse.Namespace, project_dir: Path, input_dir: Path) ->
     print_status(f"Agent in progress...")
     
     # Launch codex agent
+    # Get LLM provider configuration (storing in add-specific vars for use in resume commands)
+    config_options_add, env_key_add = get_codex_config_options()
+    
     env = os.environ.copy()
-    env["CODEX_API_KEY"] = os.environ["OPENAI_API_KEY"]
     
     instruction = ADD_CONCEPT_AGENT_PROMPT.format(concept=concept)
     
@@ -687,14 +716,23 @@ def add_concept(args: argparse.Namespace, project_dir: Path, input_dir: Path) ->
         "--cd",
         str(input_dir.resolve()),
         "--model",
-        args.model,
-        "--config",
-        f"model_reasoning_effort='{GLOBAL_CODEX_REASONING_EFFORT}'",
+        model,
+    ]
+    
+    # Add all config options
+    for config_opt in config_options_add:
+        command.extend(["--config", config_opt])
+    
+    # Only add reasoning effort for OpenAI reasoning models
+    if "gpt-5" in model or "gpt-5.1" in model:
+        command.extend(["--config", f"model_reasoning_effort='{GLOBAL_CODEX_REASONING_EFFORT}'"])
+    
+    command.extend([
         "--json",
         instruction,
         # "--output-schema",
         # "knowledge_units_schema.json"
-    ]
+    ])
     
     # print_status(f"Launching codex agent with instruction: {instruction}")
     
@@ -756,14 +794,23 @@ def add_concept(args: argparse.Namespace, project_dir: Path, input_dir: Path) ->
             "--cd",
             str(input_dir.resolve()),
             "--model",
-            args.model,
-            "--config",
-            f"model_reasoning_effort='{GLOBAL_CODEX_REASONING_EFFORT}'",
+            model,
+        ]
+        
+        # Add all config options
+        for config_opt in config_options_add:
+            resume_command.extend(["--config", config_opt])
+        
+        # Only add reasoning effort for OpenAI reasoning models
+        if "gpt-5" in model or "gpt-5.1" in model:
+            resume_command.extend(["--config", f"model_reasoning_effort='{GLOBAL_CODEX_REASONING_EFFORT}'"])
+        
+        resume_command.extend([
             "--json",
             "resume",
             thread_id,
             user_feedback,
-        ]
+        ])
 
         print_status("Continuing agent with your input…")
         process2 = subprocess.Popen(
@@ -868,9 +915,19 @@ def delete_concept(args: argparse.Namespace, project_dir: Path) -> None:
     print_status(f"Deleted knowledge unit ID {target_id}: '{removed.get('heading', '')}'.")
 
 def run_synth(args: argparse.Namespace) -> None:
-    # Check for required OPENAI_API_KEY environment variable
-    if not os.environ.get("OPENAI_API_KEY"):
-        raise SystemExit("OPENAI_API_KEY is required but not defined in the environment. Currenlty only OpenAI models are supported.")
+    # Load and print LLM configuration from .env
+    try:
+        llm_config = load_llm_config()
+        print(f"[INFO] LLM Configuration from .env:")
+        print(f"[INFO]   MODEL: {llm_config['model']}")
+        print(f"[INFO]   BASE_URL: {llm_config['base_url']}")
+        print(f"[INFO]   ENV_KEY: {llm_config['env_key']}")
+    except SystemExit as e:
+        # If .env loading fails, it will exit with appropriate error message
+        raise
+    
+    # Extract model from config
+    model = llm_config['model']
 
     # Validate project directory under projects/
     project_dir = Path("projects") / args.project
@@ -892,12 +949,12 @@ def run_synth(args: argparse.Namespace) -> None:
     # CRUD mode: if any of the CRUD flags are present, skip ingest/synthesis flow.
     if getattr(args, "list_concepts", False) or args.delete_concept is not None or args.add_concept or args.modify_concept:
         if args.add_concept:
-            add_concept(args, project_dir, input_dir)
+            add_concept(args, project_dir, input_dir, model)
             return
         if args.modify_concept:
             if args.concept_id is None:
                 raise SystemExit("--concept_id is required when using --modify_concept.")
-            modify_concept(args, project_dir, input_dir)
+            modify_concept(args, project_dir, input_dir, model)
             return
         if getattr(args, "list_concepts", False):
             list_concepts(project_dir)
@@ -933,7 +990,7 @@ def run_synth(args: argparse.Namespace) -> None:
     # Single worker: research all concepts at once
     print_status(f"Synthesizing design for all {len(key_concepts)} concepts...")
     research_result, _, token_usage = research_all_concepts(
-        key_concepts, args.model, directory
+        key_concepts, model, directory
     )
     print(f"[INFO] Token usage: {token_usage}")
     

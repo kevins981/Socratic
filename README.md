@@ -93,11 +93,28 @@ socratic-cli synth --project airline_demo --delete_concept 1
 socratic-cli compose --project airline_demo
 ```
 
-## OpenAI API
-Currently only OpenAI models are supported, and an OpenAI API key is required.
-```bash
-export OPENAI_API_KEY="your_api_key_here"
-```
+## Supported Models
+
+Socratic works with any LLM that exposes an OpenAI-compatible API, including locally hosted models.
+
+To configure your model, create a `.env` file at the project root (see `.env.example`).
+
+The `.env` file must include:
+- `MODEL`
+- `BASE_URL`
+- `ENV_KEY`
+- `PROVIDER`
+
+### Model Quality Notes
+
+Some models do not work well with Codex due to tool-calling issues. In practice:
+
+- **Most stable:** `gpt-5`, `gpt-5.1`
+- **Works well:** `glm-4.6`, `grok-4`
+
+In some cases, the model may encouter tool calling problems and therefore fail unexpectedly. E.g., `gpt-oss-120` is known to be unstable. In general, smaller models tend to be more unstable.
+Socratic relies on multi-step reasoning and tool operations, so the model must be sufficiently capable to run the full pipeline reliably.
+
 
 ## How It Works
 

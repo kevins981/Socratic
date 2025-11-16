@@ -6,8 +6,9 @@ import os
 import shutil
 import subprocess
 from pathlib import Path
+from typing import List, Dict, Any
 
-from openai import OpenAI
+import litellm
 
 from .constants import *
 from .io_utils import save_as, print_status, print_agent_block, prompt_input, load_project_config
@@ -376,17 +377,22 @@ def llm_generate_title(input_text: str) -> str:
     """
     Takes the raw text input and generates a title for it.
     """
-    # print(f"[DEBUG] converting synth_output to JSON: {synth_output[:50]}...")
-    client = OpenAI()
-    prompt = f"""Generate a title for the following text.
+    # Load LLM config to get model, api_base, and provider
+    llm_config = load_llm_config()
+    model = llm_config['model']
+    api_base = llm_config['base_url']
+    provider = llm_config['provider']
     
-    The input text:
-    {input_text}"""
+    messages: List[Dict[str, Any]] = [
+        {"role": "system", "content": "Generate a title for the following text."},
+        {"role": "user", "content": f"The input text:\n{input_text}"}
+    ]
 
-    response = client.responses.create(
-        model="gpt-5.1",
-        reasoning={"effort": "none"},
-        input=prompt
+    response = litellm.completion(
+        model=model,
+        custom_llm_provider=provider,
+        messages=messages,
+        api_base=api_base
     )
 
     # Print token usage
@@ -394,7 +400,7 @@ def llm_generate_title(input_text: str) -> str:
         usage = response.usage
         print(f"[INFO] llm_generate_title token usage: {usage}")
 
-    return response.output_text
+    return response.choices[0].message.content
 
 
 
@@ -402,24 +408,29 @@ def convert_synth_output_to_json(synth_output: str) -> dict:
     """
     Takes the raw text output and converts it to JSON following the given schema.
     """
-    # print(f"[DEBUG] converting synth_output to JSON: {synth_output[:50]}...")
-    client = OpenAI()
-    prompt = f"""Convert the following raw text output to JSON following the given schema. Convert text as is, do not change or modify the text. Do not attempt to summarize or paraphrase the given text. Do not add any additional text or comments.
+    # Load LLM config to get model, api_base, and provider
+    llm_config = load_llm_config()
+    model = llm_config['model']
+    api_base = llm_config['base_url']
+    provider = llm_config['provider']
     
-    The given text:
-    {synth_output}"""
+    messages: List[Dict[str, Any]] = [
+        {"role": "system", "content": "Convert the following raw text output to JSON following the given schema. Convert text as is, do not change or modify the text. Do not attempt to summarize or paraphrase the given text. Do not add any additional text or comments."},
+        {"role": "user", "content": f"The given text:\n{synth_output}"}
+    ]
 
-    response = client.responses.create(
-        model="gpt-5-mini", # keeping this gpt 5 since 5.1 seems to have issues where it clusters everything into a single knowledge unit
-        reasoning={"effort": "minimal"}, 
-        input=prompt,
-        text={
-            "format": {
-                "type": "json_schema",
+    response = litellm.completion(
+        model=model,
+        custom_llm_provider=provider,
+        messages=messages,
+        api_base=api_base,
+        response_format={
+            "type": "json_schema",
+            "json_schema": {
                 "name": "knowledge_units_schema",
                 "schema": knowledge_units_schema,
             }
-        },
+        }
     )
 
     # Print token usage
@@ -428,7 +439,7 @@ def convert_synth_output_to_json(synth_output: str) -> dict:
         print(f"[INFO] Token usage: {usage}")
 
     try:
-        output_json = json.loads(response.output_text)
+        output_json = json.loads(response.choices[0].message.content)
     except json.JSONDecodeError as error:
         raise ValueError("Failed to parse Codex output as JSON in convert_synth_output_to_json().") from error
 

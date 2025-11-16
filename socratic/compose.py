@@ -4,8 +4,8 @@ import argparse
 import json
 from pathlib import Path
 from types import BuiltinMethodType
-from typing import Any
-from openai import OpenAI
+from typing import Any, List, Dict
+import litellm
 from datetime import datetime
 import os
 
@@ -207,10 +207,13 @@ def compose_prompt(selected_units: list[dict], model: str, project_dir: Path, ou
     """
     print(f"\n[INFO] Composing with {len(selected_units)} selected knowledge units:")
     
-    client = OpenAI()
+    # Load LLM config to get api_base and provider
+    llm_config = load_llm_config()
+    api_base = llm_config['base_url']
+    provider = llm_config['provider']
 
     formatted_units = json.dumps(selected_units, indent=2, ensure_ascii=False)
-    prompt = f"""You are a "Knowledge-to-Prompt" specialist, an expert LLM prompt engineer with a specialization in designing autonomous agents.
+    system_content = """You are a "Knowledge-to-Prompt" specialist, an expert LLM prompt engineer with a specialization in designing autonomous agents.
 
 Your mission is to convert a given list of structured knowledge units (provided in JSON format) into a clear, actionable, and precise "prompt snippet."
 
@@ -230,22 +233,31 @@ Don't expose internal citations/filenames (e.g., wiki.md:34) in user-visible mes
 Respect scope. Output only the snippet; do not add "You are…", system/meta instructions, or formatting fences.
 Tone: concise, neutral, and clear; avoid legalese unless mandated by a policy.
 
-Now, please process the following JSON list of knowledge units and generate the complete prompt snippet based on all the rules specified above.
+Now, please process the following JSON list of knowledge units and generate the complete prompt snippet based on all the rules specified above."""
 
-{formatted_units}"""
+    user_content = formatted_units
+
+    messages: List[Dict[str, Any]] = [
+        {"role": "system", "content": system_content},
+        {"role": "user", "content": user_content}
+    ]
 
     print(f"[INFO] sending compose prompt to model")
-    response = client.responses.create(
+    response = litellm.completion(
         model=model,
-        reasoning={"effort": "none"} if model == "gpt-5.1" else {"effort": "minimal"},
-        input=prompt
+        custom_llm_provider=provider,
+        messages=messages,
+        api_base=api_base
     )
 
     print("\n[INFO] Compose process completed.")
     
+    # Extract content from litellm response
+    output_text = response.choices[0].message.content
+    
     # Save to socratic_kbs.json first
     kbs_data = _load_kbs_json(project_dir)
-    kbs_data[output_name] = response.output_text
+    kbs_data[output_name] = output_text
     _save_kbs_json(project_dir, kbs_data)
     print(f"[INFO] Saved to socratic_kbs.json with key '{output_name}'")
     
@@ -253,7 +265,7 @@ Now, please process the following JSON list of knowledge units and generate the 
     _generate_python_file(project_dir, kbs_data)
     
     # Then save markdown file
-    save_as(response.output_text, project_dir / f"{output_name}.md")
+    save_as(output_text, project_dir / f"{output_name}.md")
     print(f"[INFO] Compose result saved to {project_dir / f'{output_name}.md'}")
 
     # Print token usage

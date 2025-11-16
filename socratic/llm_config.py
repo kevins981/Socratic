@@ -16,6 +16,7 @@ def load_llm_config():
             - model: The model name
             - base_url: The API base URL
             - env_key: The environment variable name for the API key
+            - provider: The custom LLM provider name
             
     Raises:
         SystemExit: If .env file is missing or required variables are not set
@@ -28,7 +29,8 @@ def load_llm_config():
             "Please create a .env file with the following variables:\n"
             "  MODEL=<model_name>\n"
             "  BASE_URL=<api_base_url>\n"
-            "  ENV_KEY=<api_key_env_var_name>"
+            "  ENV_KEY=<api_key_env_var_name>\n"
+            "  PROVIDER=<custom_llm_provider_name>"
         )
     
     # Read .env file
@@ -45,7 +47,7 @@ def load_llm_config():
                 config[key.strip()] = value.strip()
     
     # Validate required variables
-    required_vars = ['MODEL', 'BASE_URL', 'ENV_KEY']
+    required_vars = ['MODEL', 'BASE_URL', 'ENV_KEY', 'PROVIDER']
     missing_vars = [var for var in required_vars if var not in config]
     
     if missing_vars:
@@ -54,13 +56,15 @@ def load_llm_config():
             "Please ensure your .env file contains:\n"
             "  MODEL=<model_name>\n"
             "  BASE_URL=<api_base_url>\n"
-            "  ENV_KEY=<api_key_env_var_name>"
+            "  ENV_KEY=<api_key_env_var_name>\n"
+            "  PROVIDER=<custom_llm_provider_name>"
         )
     
     return {
         'model': config['MODEL'],
         'base_url': config['BASE_URL'],
-        'env_key': config['ENV_KEY']
+        'env_key': config['ENV_KEY'],
+        'provider': config['PROVIDER']
     }
 
 

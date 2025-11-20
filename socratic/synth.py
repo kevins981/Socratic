@@ -455,6 +455,45 @@ def save_consolidated(project_dir: Path, data: dict) -> Path:
     save_as(json.dumps(data, indent=2, ensure_ascii=False), out_path)
     return out_path
 
+def add_knowledge_unit(project_dir: Path, knowledge_unit: dict) -> None:
+    """
+    Add a new knowledge unit to the consolidated knowledge base.
+    """
+    existing_knowledge_base_file = load_consolidated(project_dir)
+    if existing_knowledge_base_file is None:
+        raise ValueError("No existing knowledge base file found.")
+    existing_knowledge_base = existing_knowledge_base_file.get("knowledge_units", [])
+    existing_knowledge_base.append(knowledge_unit)
+    existing_knowledge_base_file["knowledge_units"] = existing_knowledge_base
+    existing_knowledge_base_file = ensure_ids(existing_knowledge_base_file)
+    save_consolidated(project_dir, existing_knowledge_base_file)
+
+
+def delete_knowledge_unit(project_dir: Path, knowledge_unit_id: int) -> None:
+    """
+    Delete a knowledge unit from the consolidated knowledge base.
+    """
+    existing_knowledge_base_file = load_consolidated(project_dir)
+    if existing_knowledge_base_file is None:
+        raise ValueError("No existing knowledge base file found.")
+    existing_knowledge_base = existing_knowledge_base_file.get("knowledge_units", [])
+    existing_knowledge_base.pop(knowledge_unit_id)
+    existing_knowledge_base_file["knowledge_units"] = existing_knowledge_base
+    existing_knowledge_base_file = ensure_ids(existing_knowledge_base_file)
+    save_consolidated(project_dir, existing_knowledge_base_file)
+
+def modify_knowledge_unit(project_dir: Path, knowledge_unit_id: int, new_knowledge_unit: dict) -> None:
+    """
+    Modify a knowledge unit in the consolidated knowledge base.
+    """
+    existing_knowledge_base_file = load_consolidated(project_dir)
+    if existing_knowledge_base_file is None:
+        raise ValueError("No existing knowledge base file found.")
+    existing_knowledge_base = existing_knowledge_base_file.get("knowledge_units", [])
+    existing_knowledge_base[knowledge_unit_id] = new_knowledge_unit
+    existing_knowledge_base_file["knowledge_units"] = existing_knowledge_base
+    existing_knowledge_base_file = ensure_ids(existing_knowledge_base_file)
+    save_consolidated(project_dir, existing_knowledge_base_file)
 
 def ensure_ids(data: dict) -> dict:
     """

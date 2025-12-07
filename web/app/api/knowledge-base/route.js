@@ -2,57 +2,34 @@ import { NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
 
-export async function GET() {
-  const projectRoot = process.env.PROJECT_ROOT;
-  
-  if (!projectRoot) {
-    return NextResponse.json({ error: 'PROJECT_ROOT is not set' }, { status: 500 });
-  }
+export const runtime = 'nodejs';
 
+export async function GET() {
   try {
-    const filePath = path.join(projectRoot, 'synth-consolidated.json');
-    
-    // Check if file exists
+    const projectName = process.env.PROJECT_NAME || 'Socratic Project';
+    const webCwd = process.cwd();
+    const repoRoot = path.resolve(webCwd, '..');
+    const projectDir = path.join(repoRoot, 'projects', projectName);
+    const kbDir = path.join(projectDir, 'knowledge_base');
+
+    // Check if knowledge_base directory exists
     try {
-      await fs.promises.access(filePath);
+      await fs.promises.access(kbDir);
     } catch {
-      return NextResponse.json({ exists: false }, { status: 200 });
+      return NextResponse.json({ exists: false, files: [] }, { status: 200 });
     }
 
-    // Read and parse the file
-    const content = await fs.promises.readFile(filePath, 'utf8');
-    const data = JSON.parse(content);
+    // Read all files from the knowledge_base directory
+    const entries = await fs.promises.readdir(kbDir, { withFileTypes: true });
     
-    return NextResponse.json({ exists: true, data }, { status: 200 });
+    // Filter for markdown files only
+    const mdFiles = entries
+      .filter(entry => entry.isFile() && entry.name.endsWith('.md'))
+      .map(entry => path.join(kbDir, entry.name));
+    
+    return NextResponse.json({ exists: mdFiles.length > 0, files: mdFiles }, { status: 200 });
   } catch (err) {
     return NextResponse.json({ error: err?.message || 'Failed to read knowledge base' }, { status: 500 });
-  }
-}
-
-export async function POST(req) {
-  const projectRoot = process.env.PROJECT_ROOT;
-  
-  if (!projectRoot) {
-    return NextResponse.json({ error: 'PROJECT_ROOT is not set' }, { status: 500 });
-  }
-
-  try {
-    const body = await req.json();
-    const { knowledge_units } = body;
-
-    if (!Array.isArray(knowledge_units)) {
-      return NextResponse.json({ error: 'knowledge_units must be an array' }, { status: 400 });
-    }
-
-    const filePath = path.join(projectRoot, 'synth-consolidated.json');
-    const data = { knowledge_units };
-    
-    // Write the file with pretty formatting
-    await fs.promises.writeFile(filePath, JSON.stringify(data, null, 2), 'utf8');
-    
-    return NextResponse.json({ success: true }, { status: 200 });
-  } catch (err) {
-    return NextResponse.json({ error: err?.message || 'Failed to save knowledge base' }, { status: 500 });
   }
 }
 

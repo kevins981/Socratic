@@ -9,7 +9,6 @@ export default function Nav() {
   return (
     <nav className="nav">
       <Link href="/synthesize" className={pathname === '/synthesize' ? 'active' : ''}>Synthesize</Link>
-      <Link href="/compose" className={pathname === '/compose' ? 'active' : ''}>Compose</Link>
     </nav>
   );
 }

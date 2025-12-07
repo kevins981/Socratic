@@ -18,12 +18,10 @@ export default function SynthesizePage() {
   const eventSourceRef = useRef(null);
   const [activeTab, setActiveTab] = useState('source'); // 'source' | 'agent' | 'knowledge'
   const chatContainerRef = useRef(null);
-  const [knowledgeBase, setKnowledgeBase] = useState(null); // { knowledge_units: [...] }
-  const [editedKnowledgeBase, setEditedKnowledgeBase] = useState(null);
-  const [hasKnowledgeChanges, setHasKnowledgeChanges] = useState(false);
-  const [savingKnowledge, setSavingKnowledge] = useState(false);
-  const [saveSuccess, setSaveSuccess] = useState(false);
-  const [expandedUnits, setExpandedUnits] = useState(new Set()); // Set of expanded unit IDs
+  const [knowledgeFiles, setKnowledgeFiles] = useState([]); // Array of markdown file paths
+  const [activeKnowledgeFile, setActiveKnowledgeFile] = useState(null); // Currently selected file path
+  const [knowledgeFileContents, setKnowledgeFileContents] = useState({}); // path -> content mapping
+  const [loadingKnowledgeContent, setLoadingKnowledgeContent] = useState(false);
   const [returnToTab, setReturnToTab] = useState(null); // Track which tab to return to after agent session
 
   function parseLogLinesToMessages(lines) {
@@ -198,14 +196,14 @@ export default function SynthesizePage() {
           }
         }
 
-        // Check for knowledge base file
+        // Check for knowledge base files
         const kbResponse = await fetch('/api/knowledge-base');
         const kbData = await kbResponse.json();
-        if (kbData.exists && kbData.data) {
-          setKnowledgeBase(kbData.data);
-          setEditedKnowledgeBase(kbData.data);
-          // Switch to knowledge base tab if file exists
-          setActiveTab('knowledge');
+        if (kbData.exists && Array.isArray(kbData.files)) {
+          setKnowledgeFiles(kbData.files);
+          if (kbData.files.length > 0) {
+            setActiveKnowledgeFile(kbData.files[0]);
+          }
         }
       } catch (err) {
         console.log('Error loading project and session state:', err);
@@ -397,60 +395,6 @@ export default function SynthesizePage() {
     }
   }
 
-  async function startModifyConcept(conceptId) {
-    if (synthesizeSession && synthesizeSession.status === 'running') return;
-    try {
-      // Close previous stream if any
-      try {
-        if (eventSourceRef.current) {
-          eventSourceRef.current.close();
-          eventSourceRef.current = null;
-        }
-      } catch {}
-      setLogLines([]);
-      const resp = await fetch('/api/modify-concept/start', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ conceptId })
-      });
-      const data = await resp.json();
-      if (!resp.ok) throw new Error(data?.error || 'Failed to start modify concept');
-      const sessionId = data.sessionId;
-      setSynthesizeSession({ id: sessionId, status: 'running' });
-      setReturnToTab('knowledge');
-      setActiveTab('agent');
-      reconnectToSession(sessionId);
-    } catch (err) {
-      setLogLines((prev) => [...prev, `[ERR] ${err?.message || 'Failed to start modify concept'}`]);
-    }
-  }
-
-  async function startAddConcept() {
-    if (synthesizeSession && synthesizeSession.status === 'running') return;
-    try {
-      // Close previous stream if any
-      try {
-        if (eventSourceRef.current) {
-          eventSourceRef.current.close();
-          eventSourceRef.current = null;
-        }
-      } catch {}
-      setLogLines([]);
-      const resp = await fetch('/api/add-concept/start', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
-      });
-      const data = await resp.json();
-      if (!resp.ok) throw new Error(data?.error || 'Failed to start add concept');
-      const sessionId = data.sessionId;
-      setSynthesizeSession({ id: sessionId, status: 'running' });
-      setReturnToTab('knowledge');
-      setActiveTab('agent');
-      reconnectToSession(sessionId);
-    } catch (err) {
-      setLogLines((prev) => [...prev, `[ERR] ${err?.message || 'Failed to start add concept'}`]);
-    }
-  }
 
   async function submitInput() {
     if (!synthesizeSession || synthesizeSession.status !== 'running' || !inputText) return;
@@ -472,17 +416,18 @@ export default function SynthesizePage() {
       // If DONE was submitted and we have a return tab, switch back after a short delay
       if (isDone && returnToTab) {
         setTimeout(async () => {
-          // Reload knowledge base data
+          // Reload knowledge base files
           try {
             const kbResponse = await fetch('/api/knowledge-base');
             const kbData = await kbResponse.json();
-            if (kbData.exists && kbData.data) {
-              setKnowledgeBase(kbData.data);
-              setEditedKnowledgeBase(kbData.data);
-              setHasKnowledgeChanges(false);
+            if (kbData.exists && Array.isArray(kbData.files)) {
+              setKnowledgeFiles(kbData.files);
+              if (kbData.files.length > 0 && !activeKnowledgeFile) {
+                setActiveKnowledgeFile(kbData.files[0]);
+              }
             }
           } catch (err) {
-            console.log('Error reloading knowledge base:', err);
+            console.log('Error reloading knowledge base files:', err);
           }
           
           // Switch to the return tab
@@ -503,98 +448,24 @@ export default function SynthesizePage() {
   // Refresh knowledge base when switching to the knowledge tab
   useEffect(() => {
     if (activeTab === 'knowledge') {
-      const loadKnowledgeBase = async () => {
+      const loadKnowledgeFiles = async () => {
         try {
           const kbResponse = await fetch('/api/knowledge-base');
           const kbData = await kbResponse.json();
-          if (kbData.exists && kbData.data) {
-            setKnowledgeBase(kbData.data);
-            setEditedKnowledgeBase(kbData.data);
-            setHasKnowledgeChanges(false);
+          if (kbData.exists && Array.isArray(kbData.files)) {
+            setKnowledgeFiles(kbData.files);
+            if (kbData.files.length > 0 && !activeKnowledgeFile) {
+              setActiveKnowledgeFile(kbData.files[0]);
+            }
           }
         } catch (err) {
-          console.log('Error loading knowledge base:', err);
+          console.log('Error loading knowledge base files:', err);
         }
       };
-      loadKnowledgeBase();
+      loadKnowledgeFiles();
     }
   }, [activeTab]);
 
-  function toggleUnitExpanded(id) {
-    setExpandedUnits((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) {
-        next.delete(id);
-      } else {
-        next.add(id);
-      }
-      return next;
-    });
-  }
-
-  function updateKnowledgeUnit(id, field, value) {
-    setEditedKnowledgeBase((prev) => {
-      if (!prev || !prev.knowledge_units) return prev;
-      const updated = {
-        ...prev,
-        knowledge_units: prev.knowledge_units.map((unit) =>
-          unit.id === id ? { ...unit, [field]: value } : unit
-        )
-      };
-      return updated;
-    });
-    setHasKnowledgeChanges(true);
-    setSaveSuccess(false);
-  }
-
-  async function saveKnowledgeBase() {
-    if (!editedKnowledgeBase || !hasKnowledgeChanges) return;
-    setSavingKnowledge(true);
-    try {
-      const response = await fetch('/api/knowledge-base', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(editedKnowledgeBase)
-      });
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data?.error || 'Failed to save');
-      }
-      setKnowledgeBase(editedKnowledgeBase);
-      setHasKnowledgeChanges(false);
-      setSaveSuccess(true);
-      setTimeout(() => setSaveSuccess(false), 3000);
-    } catch (err) {
-      alert(`Failed to save: ${err?.message || 'Unknown error'}`);
-    } finally {
-      setSavingKnowledge(false);
-    }
-  }
-
-  async function deleteConcept(conceptId) {
-    if (!confirm(`Are you sure you want to delete this concept?`)) return;
-    try {
-      const response = await fetch('/api/delete-concept', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ conceptId })
-      });
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data?.error || 'Failed to delete');
-      }
-      // Reload knowledge base data
-      const kbResponse = await fetch('/api/knowledge-base');
-      const kbData = await kbResponse.json();
-      if (kbData.exists && kbData.data) {
-        setKnowledgeBase(kbData.data);
-        setEditedKnowledgeBase(kbData.data);
-        setHasKnowledgeChanges(false);
-      }
-    } catch (err) {
-      alert(`Failed to delete: ${err?.message || 'Unknown error'}`);
-    }
-  }
 
   useEffect(() => {
     if (!activePath) return;
@@ -614,6 +485,26 @@ export default function SynthesizePage() {
       })
       .finally(() => setLoadingContent(false));
   }, [activePath, fileContents]);
+
+  // Load knowledge file content when activeKnowledgeFile changes
+  useEffect(() => {
+    if (!activeKnowledgeFile) return;
+    if (knowledgeFileContents[activeKnowledgeFile]) return;
+    setLoadingKnowledgeContent(true);
+    fetch(`/api/file?path=${encodeURIComponent(activeKnowledgeFile)}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (data && typeof data.content === 'string') {
+          setKnowledgeFileContents((prev) => ({ ...prev, [activeKnowledgeFile]: data.content }));
+        } else {
+          setKnowledgeFileContents((prev) => ({ ...prev, [activeKnowledgeFile]: '[Unable to display file]' }));
+        }
+      })
+      .catch(() => {
+        setKnowledgeFileContents((prev) => ({ ...prev, [activeKnowledgeFile]: '[Error loading file]' }));
+      })
+      .finally(() => setLoadingKnowledgeContent(false));
+  }, [activeKnowledgeFile, knowledgeFileContents]);
 
   const picker = showPicker ? (
     <div style={styles.modalOverlay}>
@@ -664,79 +555,41 @@ export default function SynthesizePage() {
       {activeTab === 'knowledge' ? (
         // Knowledge Base tab
         <>
-          {knowledgeBase && editedKnowledgeBase ? (
-            <div>
-              <div style={styles.knowledgeBaseHeader}>
-                <button
-                  onClick={saveKnowledgeBase}
-                  disabled={!hasKnowledgeChanges || savingKnowledge}
-                  style={hasKnowledgeChanges && !savingKnowledge ? styles.buttonPrimary : styles.buttonPrimaryDisabled}
-                >
-                  {savingKnowledge ? 'Saving...' : 'Save'}
-                </button>
-                <button
-                  onClick={startAddConcept}
-                  disabled={synthesizeSession && synthesizeSession.status === 'running'}
-                  style={(synthesizeSession && synthesizeSession.status === 'running') ? styles.buttonPrimaryDisabled : styles.buttonPrimary}
-                >
-                  Add
-                </button>
-                {saveSuccess && <span style={styles.saveSuccessMessage}>Saved successfully!</span>}
-              </div>
-              <div style={styles.knowledgeUnitsContainer}>
-                {editedKnowledgeBase.knowledge_units?.map((unit) => {
-                  const isExpanded = expandedUnits.has(unit.id);
-                  return (
-                    <div key={unit.id} style={styles.knowledgeUnitCard}>
-                      <div style={styles.knowledgeUnitHeaderRow}>
-                        <button
-                          onClick={() => toggleUnitExpanded(unit.id)}
-                          style={styles.expandButton}
-                        >
-                          {isExpanded ? '▼' : '▶'}
-                        </button>
-                        <div style={styles.knowledgeUnitHeaderContent} onClick={() => toggleUnitExpanded(unit.id)}>
-                          <span style={styles.headingDisplay}>{unit.heading || 'Untitled'}</span>
-                        </div>
-                        <button
-                          onClick={() => startModifyConcept(unit.id)}
-                          style={styles.modifyButton}
-                          disabled={synthesizeSession && synthesizeSession.status === 'running'}
-                        >
-                          Modify
-                        </button>
-                        <button
-                          onClick={() => deleteConcept(unit.id)}
-                          style={styles.deleteButton}
-                        >
-                          Delete
-                        </button>
+          {knowledgeFiles.length > 0 ? (
+            <div style={styles.paneContainer}>
+              <div style={styles.leftPane}>
+                <div style={styles.leftHeader}>
+                  <span>Knowledge Base Files</span>
+                </div>
+                <div style={styles.leftList}>
+                  {knowledgeFiles.map((filePath) => {
+                    const fileName = filePath.split('/').pop();
+                    return (
+                      <div
+                        key={filePath}
+                        onClick={() => setActiveKnowledgeFile(filePath)}
+                        style={filePath === activeKnowledgeFile ? styles.listItemActive : styles.listItem}
+                        title={filePath}
+                      >
+                        {fileName}
                       </div>
-                      {isExpanded && (
-                        <>
-                          <div style={styles.knowledgeUnitHeader}>
-                            <input
-                              type="text"
-                              value={unit.heading || ''}
-                              onChange={(e) => updateKnowledgeUnit(unit.id, 'heading', e.target.value)}
-                              style={styles.headingInput}
-                              placeholder="Heading"
-                            />
-                          </div>
-                          <div style={styles.knowledgeUnitBody}>
-                            <textarea
-                              value={unit.body || ''}
-                              onChange={(e) => updateKnowledgeUnit(unit.id, 'body', e.target.value)}
-                              style={styles.bodyTextarea}
-                              placeholder="Body content"
-                              rows={15}
-                            />
-                          </div>
-                        </>
-                      )}
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </div>
+              </div>
+              <div style={styles.rightPane}>
+                <div style={styles.rightHeader}>
+                  {activeKnowledgeFile ? activeKnowledgeFile.split('/').pop() : 'No file selected'}
+                </div>
+                <div style={styles.viewer}>
+                  {activeKnowledgeFile ? (
+                    loadingKnowledgeContent && !knowledgeFileContents[activeKnowledgeFile] ? (
+                      <div>Loading…</div>
+                    ) : (
+                      <pre style={styles.pre}>{knowledgeFileContents[activeKnowledgeFile] || ''}</pre>
+                    )
+                  ) : null}
+                </div>
               </div>
             </div>
           ) : (
@@ -1152,102 +1005,5 @@ const styles = {
     padding: '6px 10px',
     border: '1px solid #e5e7eb',
     borderRadius: 6
-  },
-  knowledgeBaseHeader: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 12,
-    marginBottom: 16
-  },
-  saveSuccessMessage: {
-    color: '#16a34a',
-    fontSize: 14,
-    fontWeight: 500
-  },
-  knowledgeUnitsContainer: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 16
-  },
-  knowledgeUnitCard: {
-    border: '1px solid #e2e2e2',
-    borderRadius: 8,
-    padding: 12,
-    background: '#fafafa'
-  },
-  knowledgeUnitHeaderRow: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 8,
-    cursor: 'pointer'
-  },
-  expandButton: {
-    background: 'transparent',
-    border: 'none',
-    fontSize: 14,
-    cursor: 'pointer',
-    padding: '4px 8px',
-    color: '#666'
-  },
-  knowledgeUnitHeaderContent: {
-    flex: 1,
-    minWidth: 0
-  },
-  headingDisplay: {
-    fontSize: 16,
-    fontWeight: 600,
-    color: '#111',
-    display: 'block',
-    whiteSpace: 'nowrap',
-    overflow: 'hidden',
-    textOverflow: 'ellipsis'
-  },
-  knowledgeUnitHeader: {
-    marginTop: 12,
-    marginBottom: 12
-  },
-  headingInput: {
-    width: '100%',
-    padding: '8px 12px',
-    fontSize: 16,
-    fontWeight: 600,
-    border: '1px solid #d1d5db',
-    borderRadius: 6,
-    background: '#ffffff'
-  },
-  knowledgeUnitBody: {
-    marginTop: 8
-  },
-  bodyTextarea: {
-    width: '100%',
-    padding: '8px 12px',
-    fontSize: 14,
-    lineHeight: 1.6,
-    border: '1px solid #d1d5db',
-    borderRadius: 6,
-    background: '#ffffff',
-    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-    resize: 'vertical',
-    minHeight: 120
-  },
-  modifyButton: {
-    padding: '6px 12px',
-    background: '#f3f4f6',
-    color: '#111',
-    border: '1px solid #e5e7eb',
-    borderRadius: 6,
-    cursor: 'pointer',
-    fontSize: 13,
-    marginLeft: 8
-  },
-  deleteButton: {
-    padding: '6px 12px',
-    background: '#f3f4f6',
-    color: '#dc2626',
-    border: '1px solid #e5e7eb',
-    borderRadius: 6,
-    cursor: 'pointer',
-    fontSize: 13,
-    marginLeft: 8
   }
 };

@@ -109,6 +109,11 @@ def build_synth_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Modify a knowledge unit interactively.",
     )
+    parser.add_argument(
+        "--webui_friendly",
+        action="store_true",
+        help="Simplify output for Web UI consumption (no [INFO]/fancy prints).",
+    )
     # The ID of each knowledge unit is simple a incrementing integer starting at 0
     parser.add_argument(
         "--concept_id",
@@ -119,7 +124,12 @@ def build_synth_parser() -> argparse.ArgumentParser:
 
 
 
-def synthesize(model: str, input_src_docs_dir: Path, project_dir: Path):
+def synthesize(
+    model: str,
+    input_src_docs_dir: Path,
+    project_dir: Path,
+    webui_friendly: bool = False,
+):
     """
     Research all concepts at once using a single Codex agent call.
     Returns the consolidated result for all concepts.
@@ -135,8 +145,13 @@ def synthesize(model: str, input_src_docs_dir: Path, project_dir: Path):
     env = os.environ.copy()
 
     # Prompt user for synthesis request
-    user_instruction = prompt_input("What should we work on?")
-    print_status(f"Agent in progress...")
+    if webui_friendly:
+        print("What should we work on?")
+        user_instruction = input()
+        print("Agent in progress...")
+    else:
+        user_instruction = prompt_input("What should we work on?")
+        print_status("Agent in progress...")
 
     # directory that contains the knowledge base files
     input_src_docs_kb_dir = input_src_docs_dir / "knowledge_base"
@@ -220,7 +235,10 @@ def synthesize(model: str, input_src_docs_dir: Path, project_dir: Path):
     text = item.get("text")
     if not isinstance(text, str):
         raise ValueError("Codex output missing item.text field.")
-    print_agent_block(text, title="Agent Draft")
+    if webui_friendly:
+        print(text)
+    else:
+        print_agent_block(text, title="Agent Draft")
     last_text = text
 
     # Extract thread_id from the first line
@@ -236,7 +254,11 @@ def synthesize(model: str, input_src_docs_dir: Path, project_dir: Path):
 
     # Interactive loop: send user feedback until DONE
     while True:
-        user_feedback = prompt_input("Type feedback (or DONE to finish)")
+        if webui_friendly:
+            print("What should we work on next?")
+            user_feedback = input()
+        else:
+            user_feedback = prompt_input("Type feedback (or DONE to finish)")
         if user_feedback.strip().upper() == "DONE":
             break
 
@@ -266,7 +288,10 @@ def synthesize(model: str, input_src_docs_dir: Path, project_dir: Path):
             user_feedback,
         ])
 
-        print_status("Continuing agent with your input…")
+        if webui_friendly:
+            print("Continuing agent with your input…")
+        else:
+            print_status("Continuing agent with your input…")
         process2 = subprocess.Popen(
             resume_command,
             stdout=subprocess.PIPE,
@@ -296,9 +321,15 @@ def synthesize(model: str, input_src_docs_dir: Path, project_dir: Path):
             raise ValueError("Codex resume output missing item.text field.")
 
         last_text = text2
-        print_agent_block(text2, title="Agent Update")
+        if webui_friendly:
+            print(text2)
+        else:
+            print_agent_block(text2, title="Agent Update")
 
-    print_status("Update session completed.")
+    if webui_friendly:
+        print("Update session completed.")
+    else:
+        print_status("Update session completed.")
 
 
     # Do a diff between the project_dir_kb and the input_src_docs_kb to get the changes.
@@ -306,7 +337,11 @@ def synthesize(model: str, input_src_docs_dir: Path, project_dir: Path):
     # Currently, we just show what changed and overwrite the project_dir_kb with the input_src_docs_kb.
     print_directory_diff(input_src_docs_kb_dir, project_dir_kb_dir)
 
-    user_confirmation = prompt_input("Enter DONE to accept the changes. Enter anything else to reject the changes.")
+    if webui_friendly:
+        print("Enter DONE to accept the changes. Enter anything else to reject the changes.")
+        user_confirmation = input()
+    else:
+        user_confirmation = prompt_input("Enter DONE to accept the changes. Enter anything else to reject the changes.")
     if user_confirmation.strip().upper() != "DONE":
         return
 
@@ -440,10 +475,11 @@ def run_synth(args: argparse.Namespace) -> None:
     # Load and print LLM configuration from .env
     try:
         llm_config = load_llm_config()
-        print(f"[INFO] LLM Configuration from .env:")
-        print(f"[INFO]   MODEL: {llm_config['model']}")
-        print(f"[INFO]   BASE_URL: {llm_config['base_url']}")
-        print(f"[INFO]   ENV_KEY: {llm_config['env_key']}")
+        if not args.webui_friendly:
+            print(f"[INFO] LLM Configuration from .env:")
+            print(f"[INFO]   MODEL: {llm_config['model']}")
+            print(f"[INFO]   BASE_URL: {llm_config['base_url']}")
+            print(f"[INFO]   ENV_KEY: {llm_config['env_key']}")
     except SystemExit as e:
         # If .env loading fails, it will exit with appropriate error message
         raise
@@ -468,10 +504,14 @@ def run_synth(args: argparse.Namespace) -> None:
         )
     input_src_docs_dir = Path(input_dir_str)
 
-    print(f"[INFO] Input source files directory: {input_src_docs_dir}")
+    if not args.webui_friendly:
+        print(f"[INFO] Input source files directory: {input_src_docs_dir}")
 
     synthesize(
-        model, input_src_docs_dir, project_dir
+        model,
+        input_src_docs_dir,
+        project_dir,
+        webui_friendly=args.webui_friendly,
     )
     # print(f"[INFO] Token usage: {token_usage}")
 

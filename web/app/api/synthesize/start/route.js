@@ -23,7 +23,8 @@ export async function POST(req) {
     const args = [
       '-u', // Unbuffered output for real-time streaming
       '-m', 'socratic.cli', 'synth',
-      '--project', projectName
+      '--project', projectName,
+      '--webui_friendly' // this removes the fancy prints for terminal output
     ];
     
     const child = spawn('python3', args, {
@@ -33,7 +34,7 @@ export async function POST(req) {
     });
 
     const sessionId = synthesizeSessionStore.createSession(child);
-    synthesizeSessionStore.appendLog(sessionId, `[INFO] Synthesize session started. Launching: python3 ${args.join(' ')}`);
+    // synthesizeSessionStore.appendLog(sessionId, `[INFO] Synthesize session started. Launching: python3 ${args.join(' ')}`);
 
     const handleData = (chunk, isErr = false) => {
       const text = chunk.toString();

@@ -9,7 +9,6 @@ from typing import List, Dict, Any
 
 import litellm
 
-from .synth import load_consolidated, save_consolidated, ensure_ids, llm_generate_title, add_knowledge_unit, delete_knowledge_unit, modify_knowledge_unit
 from .constants import GLOBAL_CODEX_REASONING_EFFORT
 from .io_utils import print_status, print_agent_block, prompt_input, load_project_config
 from .llm_config import get_codex_config_options, load_llm_config

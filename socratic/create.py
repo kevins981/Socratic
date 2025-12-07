@@ -36,9 +36,11 @@ def run_create(args: argparse.Namespace) -> None:
     input_dir = Path(input_dir_raw).expanduser().resolve()
 
     base_dir = Path("projects") / name
+    knowledge_base_dir = base_dir / "knowledge_base"
 
     # Create base project directory and subdirectories
     base_dir.mkdir(parents=True, exist_ok=True)
+    knowledge_base_dir.mkdir(parents=True, exist_ok=True)
     # (base_dir / "ingest").mkdir(parents=True, exist_ok=True)
     # (base_dir / "synth").mkdir(parents=True, exist_ok=True)
 

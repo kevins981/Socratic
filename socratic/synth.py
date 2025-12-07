@@ -255,7 +255,7 @@ def synthesize(
     # Interactive loop: send user feedback until DONE
     while True:
         if webui_friendly:
-            print("What should we work on next?")
+            print("Type feedback (or DONE to finish)")
             user_feedback = input()
         else:
             user_feedback = prompt_input("Type feedback (or DONE to finish)")

@@ -187,7 +187,7 @@ export default function SynthesizePage() {
       const projectInfo = await projectInfoRes.json();
       
       if (!projectInfo.inputDir) {
-        setLogs(['[ERROR] No inputDir found in project configuration']);
+        setLogs([{ type: 'agent', content: '[ERROR] No inputDir found in project configuration' }]);
         setStartingSession(false);
         return;
       }
@@ -202,7 +202,7 @@ export default function SynthesizePage() {
       const data = await res.json();
       
       if (!res.ok || !data.sessionId) {
-        setLogs([`[ERROR] Failed to start session: ${data.error || 'Unknown error'}`]);
+        setLogs([{ type: 'agent', content: `[ERROR] Failed to start session: ${data.error || 'Unknown error'}` }]);
         setStartingSession(false);
         return;
       }
@@ -219,7 +219,7 @@ export default function SynthesizePage() {
         try {
           const msg = JSON.parse(event.data);
           if (msg.type === 'log') {
-            setLogs((prev) => [...prev, msg.line]);
+            setLogs((prev) => [...prev, { type: 'agent', content: msg.line }]);
           } else if (msg.type === 'status') {
             setChatStatus(msg.status);
             if (msg.status === 'exited' || msg.status === 'error') {
@@ -239,7 +239,7 @@ export default function SynthesizePage() {
       };
       
     } catch (err) {
-      setLogs([`[ERROR] ${err.message}`]);
+      setLogs([{ type: 'agent', content: `[ERROR] ${err.message}` }]);
       setChatStatus('idle');
     } finally {
       setStartingSession(false);
@@ -255,12 +255,17 @@ export default function SynthesizePage() {
   async function sendInput() {
     if (!sessionId || !userInput.trim() || sendingInput) return;
     
+    const messageText = userInput;
     setSendingInput(true);
+    
+    // Add user message to logs immediately
+    setLogs((prev) => [...prev, { type: 'user', content: messageText }]);
+    
     try {
       const res = await fetch('/api/synthesize/input', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId, text: userInput })
+        body: JSON.stringify({ sessionId, text: messageText })
       });
       
       if (res.ok) {
@@ -394,8 +399,16 @@ export default function SynthesizePage() {
             </button>
           ) : (
             <div className="chat-terminal" ref={terminalRef}>
-              {logs.map((line, idx) => (
-                <div key={idx} className="chat-terminal-line">{stripAnsi(line)}</div>
+              {logs.map((message, idx) => (
+                message.type === 'user' ? (
+                  <div key={idx} className="chat-user-message">
+                    <div className="chat-user-bubble">
+                      {message.content}
+                    </div>
+                  </div>
+                ) : (
+                  <div key={idx} className="chat-terminal-line">{stripAnsi(message.content)}</div>
+                )
               ))}
             </div>
           )}

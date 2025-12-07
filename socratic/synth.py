@@ -13,48 +13,7 @@ import litellm
 
 from .constants import *
 from .io_utils import save_as, print_status, print_agent_block, prompt_input, load_project_config
-from .ingest import run_ingest
 from .llm_config import get_codex_config_options, load_llm_config
-
-
-knowledge_units_schema = {
-    "type": "object",
-    "properties": {
-        "knowledge_units": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "heading": {"type": "string"},
-                    "body": {"type": "string"}
-                },
-                "required": ["heading", "body"],
-                "additionalProperties": False
-            },
-        }
-    },
-    "required": ["knowledge_units"],
-    "additionalProperties": False
-}
-
-single_knowledge_unit_schema = {
-    "type": "object",
-    "properties": {
-        "knowledge_unit": {
-            "type": "object",
-            "properties": {
-                "heading": {"type": "string"},
-                "body": {"type": "string"}
-            },
-            "required": ["heading", "body"],
-            "additionalProperties": False
-        }
-    },
-    "required": ["knowledge_unit"],
-    "additionalProperties": False
-}
-
-
 
 SYNTHESIZE_AGENT_PROMPT = """You are an expert Senior Staff Engineer and technical architect. Your primary skill is the ability to analyze complex systems — including code, documentation, configuration files, specifications, and other text-based artifacts — and rapidly synthesize a deep, conceptual understanding of their structure, intent, and logic.
 
@@ -333,6 +292,10 @@ def synthesize(model: str, input_src_docs_dir: Path, project_dir: Path):
     # Currently, we just show what changed and overwrite the project_dir_kb with the input_src_docs_kb.
     print_directory_diff(input_src_docs_kb_dir, project_dir_kb_dir)
 
+    user_confirmation = prompt_input("Enter DONE to accept the changes. Enter anything else to reject the changes.")
+    if user_confirmation.strip().upper() != "DONE":
+        return
+
     # Overwrite the project_dir_kb with the input_src_docs_kb, which is updated by the codex agent.
     # if the project_dir_kb already exists, delete it first. This should give us what we want...
     if os.path.exists(project_dir_kb_dir):
@@ -342,78 +305,6 @@ def synthesize(model: str, input_src_docs_dir: Path, project_dir: Path):
 
     # remove the temporary input_src_docs_kb
     shutil.rmtree(input_src_docs_kb_dir)
-
-def llm_generate_title(input_text: str) -> str:
-    """
-    Takes the raw text input and generates a title for it.
-    """
-    # Load LLM config to get model, api_base, and provider
-    llm_config = load_llm_config()
-    model = llm_config['model']
-    api_base = llm_config['base_url']
-    provider = llm_config['provider']
-    
-    messages: List[Dict[str, Any]] = [
-        {"role": "system", "content": "Generate a title for the following text."},
-        {"role": "user", "content": f"The input text:\n{input_text}"}
-    ]
-
-    response = litellm.completion(
-        model=model,
-        custom_llm_provider=provider,
-        messages=messages,
-        api_base=api_base
-    )
-
-    # Print token usage
-    if hasattr(response, 'usage') and response.usage:
-        usage = response.usage
-        print(f"[INFO] llm_generate_title token usage: {usage}")
-
-    return response.choices[0].message.content
-
-
-
-def convert_synth_output_to_json(synth_output: str) -> dict:
-    """
-    Takes the raw text output and converts it to JSON following the given schema.
-    """
-    # Load LLM config to get model, api_base, and provider
-    llm_config = load_llm_config()
-    model = llm_config['model']
-    api_base = llm_config['base_url']
-    provider = llm_config['provider']
-    
-    messages: List[Dict[str, Any]] = [
-        {"role": "system", "content": "Convert the following raw text output to JSON following the given schema. Convert text as is, do not change or modify the text. Do not attempt to summarize or paraphrase the given text. Do not add any additional text or comments."},
-        {"role": "user", "content": f"The given text:\n{synth_output}"}
-    ]
-
-    response = litellm.completion(
-        model=model,
-        custom_llm_provider=provider,
-        messages=messages,
-        api_base=api_base,
-        response_format={
-            "type": "json_schema",
-            "json_schema": {
-                "name": "knowledge_units_schema",
-                "schema": knowledge_units_schema,
-            }
-        }
-    )
-
-    # Print token usage
-    if hasattr(response, 'usage') and response.usage:
-        usage = response.usage
-        print(f"[INFO] Token usage: {usage}")
-
-    try:
-        output_json = json.loads(response.choices[0].message.content)
-    except json.JSONDecodeError as error:
-        raise ValueError("Failed to parse Codex output as JSON in convert_synth_output_to_json().") from error
-
-    return output_json
 
 
 def print_directory_diff(source_dir: Path, target_dir: Path) -> None:
@@ -531,29 +422,6 @@ def print_directory_diff(source_dir: Path, target_dir: Path) -> None:
           f"{RED}{len(deleted_files)} deleted{RESET}, "
           f"{YELLOW}{len(modified_files)} modified{RESET}\n")
 
-
-def load_consolidated(project_dir: Path) -> dict | None:
-    """
-    Load the consolidated knowledge base JSON if it exists, otherwise return None.
-    """
-    path = project_dir / "synth-consolidated.json"
-    if not path.exists():
-        return None
-    try:
-        text = path.read_text(encoding="utf-8", errors="replace")
-        return json.loads(text)
-    except Exception as error:
-        raise ValueError(f"Failed to read consolidated synth JSON: {path}") from error
-
-
-def save_consolidated(project_dir: Path, data: dict) -> Path:
-    """
-    Save the consolidated knowledge base JSON to synth-consolidated.json.
-    """
-    out_path = project_dir / "synth-consolidated.json"
-    save_as(json.dumps(data, indent=2, ensure_ascii=False), out_path)
-    return out_path
-
 def run_synth(args: argparse.Namespace) -> None:
     # Load and print LLM configuration from .env
     try:
@@ -598,10 +466,7 @@ def run_synth(args: argparse.Namespace) -> None:
 
 __all__ = [
     "build_synth_parser",
-    # "research_concept_design",
     "synthesize",
-    "consolidate",
-    "list_concepts",
     "run_synth",
 ]
 

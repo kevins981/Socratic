@@ -3,8 +3,6 @@ import sys
 from .synth import build_synth_parser, run_synth
 from .create import build_create_parser, run_create
 from .compose import build_compose_parser, run_compose
-from .update import build_update_parser, run_update
-
 
 def build_root_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
@@ -46,12 +44,6 @@ def main() -> None:
         sub_parser = build_compose_parser()
         sub_args = sub_parser.parse_args(sys.argv[2:])
         run_compose(sub_args)
-        return
-
-    if command == "update":
-        sub_parser = build_update_parser()
-        sub_args = sub_parser.parse_args(sys.argv[2:])
-        run_update(sub_args)
         return
 
     root_parser.error(f"Unknown command: {command}")

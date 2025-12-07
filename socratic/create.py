@@ -41,8 +41,7 @@ def run_create(args: argparse.Namespace) -> None:
     # Create base project directory and subdirectories
     base_dir.mkdir(parents=True, exist_ok=True)
     knowledge_base_dir.mkdir(parents=True, exist_ok=True)
-    # (base_dir / "ingest").mkdir(parents=True, exist_ok=True)
-    # (base_dir / "synth").mkdir(parents=True, exist_ok=True)
+
 
     # Create project.yaml with minimal metadata
     created_at = datetime.now().isoformat(timespec="seconds")

@@ -1,5 +1,4 @@
 import './globals.css';
-import Nav from './nav';
 import { SelectedFilesProvider } from './selected-files-context';
 
 export default function RootLayout({ children }) {
@@ -11,17 +10,10 @@ export default function RootLayout({ children }) {
         <SelectedFilesProvider>
           <div className="app">
             <div className="topbar">{projectName}</div>
-            <div className="content">
-              <aside className="sidebar">
-                <Nav />
-              </aside>
-              <main className="main">{children}</main>
-            </div>
+            <main className="main-content">{children}</main>
           </div>
         </SelectedFilesProvider>
       </body>
     </html>
   );
 }
-
-

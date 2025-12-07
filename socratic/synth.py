@@ -69,6 +69,20 @@ First user instruction: {user_instruction}
 """
 
 
+def sync_knowledge_base(source_kb_dir: Path, target_kb_dir: Path) -> None:
+    """
+    Synchronize knowledge base by copying source to target.
+    Deletes target directory if it exists, then copies source to target.
+    
+    Args:
+        source_kb_dir: The source knowledge base directory (what the agent produced)
+        target_kb_dir: The target knowledge base directory (to be overwritten)
+    """
+    if os.path.exists(target_kb_dir):
+        shutil.rmtree(target_kb_dir)
+    shutil.copytree(source_kb_dir, target_kb_dir)
+
+
 def build_synth_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="socratic-cli synth",
@@ -241,6 +255,9 @@ def synthesize(
         print_agent_block(text, title="Agent Draft")
     last_text = text
 
+    # Apply changes immediately after initial agent response
+    sync_knowledge_base(input_src_docs_kb_dir, project_dir_kb_dir)
+
     # Extract thread_id from the first line
     thread_start_line = collected_output[0]
     try:
@@ -252,15 +269,13 @@ def synthesize(
     else:
         raise ValueError(f"Unexpected Codex output: thread_id not found in the first line: {thread_start_line}")
 
-    # Interactive loop: send user feedback until DONE
+    # Interactive loop: send user feedback (exits on Ctrl-C)
     while True:
         if webui_friendly:
-            print("Type feedback (or DONE to finish)")
+            # print("Type feedback")
             user_feedback = input()
         else:
-            user_feedback = prompt_input("Type feedback (or DONE to finish)")
-        if user_feedback.strip().upper() == "DONE":
-            break
+            user_feedback = prompt_input("")
 
         resume_command = [
             "codex",
@@ -326,34 +341,8 @@ def synthesize(
         else:
             print_agent_block(text2, title="Agent Update")
 
-    if webui_friendly:
-        print("Update session completed.")
-    else:
-        print_status("Update session completed.")
-
-
-    # Do a diff between the project_dir_kb and the input_src_docs_kb to get the changes.
-    # TODO: this is where the user will approve the changes, similar to cursor.
-    # Currently, we just show what changed and overwrite the project_dir_kb with the input_src_docs_kb.
-    print_directory_diff(input_src_docs_kb_dir, project_dir_kb_dir)
-
-    if webui_friendly:
-        print("Enter DONE to accept the changes. Enter anything else to reject the changes.")
-        user_confirmation = input()
-    else:
-        user_confirmation = prompt_input("Enter DONE to accept the changes. Enter anything else to reject the changes.")
-    if user_confirmation.strip().upper() != "DONE":
-        return
-
-    # Overwrite the project_dir_kb with the input_src_docs_kb, which is updated by the codex agent.
-    # if the project_dir_kb already exists, delete it first. This should give us what we want...
-    if os.path.exists(project_dir_kb_dir):
-        shutil.rmtree(project_dir_kb_dir)
-
-    shutil.copytree(input_src_docs_kb_dir, project_dir_kb_dir)
-
-    # remove the temporary input_src_docs_kb
-    shutil.rmtree(input_src_docs_kb_dir)
+        # Apply changes immediately after each agent response
+        sync_knowledge_base(input_src_docs_kb_dir, project_dir_kb_dir)
 
 
 def print_directory_diff(source_dir: Path, target_dir: Path) -> None:

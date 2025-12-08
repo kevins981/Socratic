@@ -6,6 +6,14 @@ You point Socratic at your existing domain docs, and Socratic collaborates with 
 Socratic is a **KnowledgeOps platform** that helps teams build *expert-level*, trustworthy knowledge bases for vertical, domain-specific agents.  
 Point Socratic at your existing docs, and collaborate with Socratic to synthesize a **curated, reliable, auditable knowledge base**.
 
+![GitHub commit activity](https://img.shields.io/github/commit-activity/m/kevins981/Socratic)
+![GitHub License](https://img.shields.io/github/license/kevins981/Socratic)
+![Static Badge](https://img.shields.io/badge/model%20support-openai,openrouter,local-orange)
+![GitHub Repo stars](https://img.shields.io/github/stars/kevins981/Socratic)
+
+
+
+
 ## Overview
 High-quality domain knowledge is *critical* for building high-value agents.  
 

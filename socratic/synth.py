@@ -255,8 +255,10 @@ def synthesize(
         print_agent_block(text, title="Agent Draft")
     last_text = text
 
-    # Apply changes immediately after initial agent response
-    sync_knowledge_base(input_src_docs_kb_dir, project_dir_kb_dir)
+    # Apply changes immediately after initial agent response (terminal mode only)
+    # In webui_friendly mode, we skip auto-sync and let the web UI handle per-file approval
+    if not webui_friendly:
+        sync_knowledge_base(input_src_docs_kb_dir, project_dir_kb_dir)
 
     # Extract thread_id from the first line
     thread_start_line = collected_output[0]
@@ -341,8 +343,10 @@ def synthesize(
         else:
             print_agent_block(text2, title="Agent Update")
 
-        # Apply changes immediately after each agent response
-        sync_knowledge_base(input_src_docs_kb_dir, project_dir_kb_dir)
+        # Apply changes immediately after each agent response (terminal mode only)
+        # In webui_friendly mode, we skip auto-sync and let the web UI handle per-file approval
+        if not webui_friendly:
+            sync_knowledge_base(input_src_docs_kb_dir, project_dir_kb_dir)
 
 
 def print_directory_diff(source_dir: Path, target_dir: Path) -> None:

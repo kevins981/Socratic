@@ -26,6 +26,11 @@ export default function SynthesizePage() {
   const terminalRef = useRef(null);
   const eventSourceRef = useRef(null);
 
+  // KB approval state
+  const [pendingChanges, setPendingChanges] = useState({}); // { filename: { status, diff, oldContent, newContent } }
+  const [acceptingFile, setAcceptingFile] = useState(null);
+  const [rejectingFile, setRejectingFile] = useState(null);
+
   // Strip ANSI escape codes from text
   function stripAnsi(text) {
     // eslint-disable-next-line no-control-regex
@@ -34,6 +39,15 @@ export default function SynthesizePage() {
 
   // Track if content has been modified
   const hasChanges = selectedFile?.type === 'knowledge' && editedContent !== fileContent;
+
+  // Get the filename from a path
+  function getFileName(path) {
+    return path.split('/').pop();
+  }
+
+  // Check if selected file has pending changes
+  const selectedFileName = selectedFile ? getFileName(selectedFile.path) : null;
+  const selectedFilePendingChange = selectedFileName ? pendingChanges[selectedFileName] : null;
 
   // Load files on mount
   useEffect(() => {
@@ -56,6 +70,24 @@ export default function SynthesizePage() {
     };
   }, []);
 
+  // Fetch KB diffs
+  async function fetchKbDiff() {
+    try {
+      const res = await fetch('/api/kb-diff');
+      const data = await res.json();
+      
+      if (data.changedFiles && Array.isArray(data.changedFiles)) {
+        const changesMap = {};
+        for (const change of data.changedFiles) {
+          changesMap[change.filename] = change;
+        }
+        setPendingChanges(changesMap);
+      }
+    } catch (err) {
+      console.error('Error fetching KB diff:', err);
+    }
+  }
+
   async function loadFiles() {
     setLoadingFiles(true);
     try {
@@ -77,6 +109,9 @@ export default function SynthesizePage() {
       if (kbData.exists && Array.isArray(kbData.files)) {
         setKnowledgeFiles(kbData.files);
       }
+
+      // Also fetch KB diffs
+      await fetchKbDiff();
     } catch (err) {
       console.error('Error loading files:', err);
     } finally {
@@ -141,10 +176,6 @@ export default function SynthesizePage() {
     }
   }
 
-  function getFileName(path) {
-    return path.split('/').pop();
-  }
-
   // Stop the current session
   async function stopSession() {
     if (!sessionId) return;
@@ -178,8 +209,9 @@ export default function SynthesizePage() {
       await stopSession();
     }
     
-    // Clear logs for new session
+    // Clear logs and pending changes for new session
     setLogs([]);
+    setPendingChanges({});
     
     try {
       // Get project info to get inputDir
@@ -220,8 +252,18 @@ export default function SynthesizePage() {
           const msg = JSON.parse(event.data);
           if (msg.type === 'log') {
             setLogs((prev) => [...prev, { type: 'agent', content: msg.line }]);
+            // Check for KB changes after receiving agent messages
+            // We debounce this by checking on non-empty lines that aren't status messages
+            const line = msg.line.trim();
+            if (line && !line.startsWith('[') && !line.includes('in progress')) {
+              fetchKbDiff();
+            }
           } else if (msg.type === 'status') {
             setChatStatus(msg.status);
+            // Fetch diffs when agent finishes a response
+            if (msg.status === 'waiting' || msg.status === 'exited') {
+              fetchKbDiff();
+            }
             if (msg.status === 'exited' || msg.status === 'error') {
               eventSource.close();
               eventSourceRef.current = null;
@@ -289,7 +331,105 @@ export default function SynthesizePage() {
     }
   }
 
+  // Accept changes for a file
+  async function acceptFile(filename) {
+    setAcceptingFile(filename);
+    try {
+      const res = await fetch('/api/kb-accept-file', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filename })
+      });
+      
+      if (res.ok) {
+        // Remove from pending changes
+        setPendingChanges((prev) => {
+          const next = { ...prev };
+          delete next[filename];
+          return next;
+        });
+        // Refresh files list and content
+        await loadFiles();
+        // If we're viewing this file, reload its content
+        if (selectedFileName === filename) {
+          const change = pendingChanges[filename];
+          if (change) {
+            setFileContent(change.newContent);
+            setEditedContent(change.newContent);
+          }
+        }
+      } else {
+        const data = await res.json();
+        alert('Failed to accept: ' + (data.error || 'Unknown error'));
+      }
+    } catch (err) {
+      alert('Failed to accept: ' + err.message);
+    } finally {
+      setAcceptingFile(null);
+    }
+  }
+
+  // Reject changes for a file
+  async function rejectFile(filename) {
+    setRejectingFile(filename);
+    try {
+      const res = await fetch('/api/kb-reject-file', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filename })
+      });
+      
+      if (res.ok) {
+        // Remove from pending changes
+        setPendingChanges((prev) => {
+          const next = { ...prev };
+          delete next[filename];
+          return next;
+        });
+        // Refresh KB diff to ensure state is consistent
+        await fetchKbDiff();
+      } else {
+        const data = await res.json();
+        alert('Failed to reject: ' + (data.error || 'Unknown error'));
+      }
+    } catch (err) {
+      alert('Failed to reject: ' + err.message);
+    } finally {
+      setRejectingFile(null);
+    }
+  }
+
+  // Render diff view
+  function renderDiffView(change) {
+    if (!change || !change.diff) return null;
+
+    return (
+      <div className="diff-view">
+        <div className="diff-header">
+          <span className={`diff-status diff-status-${change.status}`}>
+            {change.status === 'added' ? 'New File' : 
+             change.status === 'deleted' ? 'Deleted' : 'Modified'}
+          </span>
+        </div>
+        <div className="diff-content">
+          {change.diff.map((line, idx) => (
+            <div 
+              key={idx} 
+              className={`diff-line diff-line-${line.type}`}
+            >
+              <span className="diff-line-prefix">
+                {line.type === 'add' ? '+' : line.type === 'del' ? '-' : ' '}
+              </span>
+              <span className="diff-line-content">{line.line}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
   const currentFiles = explorerTab === 'source' ? sourceFiles : knowledgeFiles;
+  const pendingChangeCount = Object.keys(pendingChanges).length;
 
   return (
     <div className="three-pane-container">
@@ -307,6 +447,9 @@ export default function SynthesizePage() {
             onClick={() => setExplorerTab('knowledge')}
           >
             Knowledge Base
+            {pendingChangeCount > 0 && (
+              <span className="pending-badge">{pendingChangeCount}</span>
+            )}
           </button>
         </div>
         <div className="explorer-file-list">
@@ -319,17 +462,38 @@ export default function SynthesizePage() {
                 : 'No knowledge base files'}
             </div>
           ) : (
-            currentFiles.map((filePath) => (
+            currentFiles.map((filePath) => {
+              const fileName = getFileName(filePath);
+              const hasPending = explorerTab === 'knowledge' && pendingChanges[fileName];
+              return (
+                <div
+                  key={filePath}
+                  className={`explorer-file-item ${selectedFile?.path === filePath ? 'active' : ''} ${hasPending ? 'has-pending-change' : ''}`}
+                  onClick={() => selectFile(filePath, explorerTab === 'source' ? 'source' : 'knowledge')}
+                  title={filePath}
+                >
+                  {hasPending && <span className="file-change-indicator"></span>}
+                  {fileName}
+                </div>
+              );
+            })
+          )}
+          {/* Show added files that aren't in the KB list yet */}
+          {explorerTab === 'knowledge' && Object.entries(pendingChanges)
+            .filter(([filename, change]) => change.status === 'added')
+            .filter(([filename]) => !knowledgeFiles.some(f => getFileName(f) === filename))
+            .map(([filename, change]) => (
               <div
-                key={filePath}
-                className={`explorer-file-item ${selectedFile?.path === filePath ? 'active' : ''}`}
-                onClick={() => selectFile(filePath, explorerTab === 'source' ? 'source' : 'knowledge')}
-                title={filePath}
+                key={`pending-${filename}`}
+                className={`explorer-file-item has-pending-change ${selectedFileName === filename ? 'active' : ''}`}
+                onClick={() => selectFile(change.userPath, 'knowledge')}
+                title={`${filename} (pending)`}
               >
-                {getFileName(filePath)}
+                <span className="file-change-indicator file-change-added"></span>
+                {filename}
               </div>
             ))
-          )}
+          }
         </div>
       </div>
 
@@ -339,19 +503,41 @@ export default function SynthesizePage() {
           <>
             <div className="viewer-header">
               <span className="viewer-filename">{getFileName(selectedFile.path)}</span>
-              {selectedFile.type === 'knowledge' && (
-                <button
-                  className="viewer-save-btn"
-                  onClick={saveFile}
-                  disabled={!hasChanges || saving}
-                >
-                  {saving ? 'Saving...' : 'Save'}
-                </button>
-              )}
+              <div className="viewer-actions">
+                {selectedFilePendingChange && (
+                  <>
+                    <button
+                      className="viewer-accept-btn"
+                      onClick={() => acceptFile(selectedFileName)}
+                      disabled={acceptingFile === selectedFileName}
+                    >
+                      {acceptingFile === selectedFileName ? 'Accepting...' : 'Accept'}
+                    </button>
+                    <button
+                      className="viewer-reject-btn"
+                      onClick={() => rejectFile(selectedFileName)}
+                      disabled={rejectingFile === selectedFileName}
+                    >
+                      {rejectingFile === selectedFileName ? 'Rejecting...' : 'Reject'}
+                    </button>
+                  </>
+                )}
+                {selectedFile.type === 'knowledge' && !selectedFilePendingChange && (
+                  <button
+                    className="viewer-save-btn"
+                    onClick={saveFile}
+                    disabled={!hasChanges || saving}
+                  >
+                    {saving ? 'Saving...' : 'Save'}
+                  </button>
+                )}
+              </div>
             </div>
             <div className="viewer-content">
               {loadingContent ? (
                 <div className="loading">Loading...</div>
+              ) : selectedFilePendingChange ? (
+                renderDiffView(selectedFilePendingChange)
               ) : selectedFile.type === 'source' ? (
                 <pre>{fileContent}</pre>
               ) : (

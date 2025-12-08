@@ -448,3 +448,174 @@ body {
   color: #808080;
   font-size: 13px;
 }
+
+/* KB Approval - Pending Changes Badge */
+.pending-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 5px;
+  margin-left: 6px;
+  background: #d97706;
+  color: #ffffff;
+  font-size: 10px;
+  font-weight: 600;
+  border-radius: 8px;
+}
+
+/* KB Approval - File Change Indicator */
+.explorer-file-item.has-pending-change {
+  position: relative;
+  padding-left: 24px;
+}
+
+.file-change-indicator {
+  position: absolute;
+  left: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #d97706;
+}
+
+.file-change-indicator.file-change-added {
+  background: #22c55e;
+}
+
+/* KB Approval - Viewer Actions */
+.viewer-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.viewer-accept-btn {
+  padding: 4px 12px;
+  background: #16a34a;
+  color: #ffffff;
+  border: none;
+  border-radius: 3px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.viewer-accept-btn:hover {
+  background: #15803d;
+}
+
+.viewer-accept-btn:disabled {
+  background: #3c3c3c;
+  color: #808080;
+  cursor: not-allowed;
+}
+
+.viewer-reject-btn {
+  padding: 4px 12px;
+  background: #dc2626;
+  color: #ffffff;
+  border: none;
+  border-radius: 3px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.viewer-reject-btn:hover {
+  background: #b91c1c;
+}
+
+.viewer-reject-btn:disabled {
+  background: #3c3c3c;
+  color: #808080;
+  cursor: not-allowed;
+}
+
+/* KB Approval - Diff View */
+.diff-view {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.diff-header {
+  padding: 8px 16px;
+  background: #2d2d2d;
+  border-bottom: 1px solid #3c3c3c;
+  flex-shrink: 0;
+}
+
+.diff-status {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.diff-status-added {
+  background: rgba(34, 197, 94, 0.2);
+  color: #22c55e;
+}
+
+.diff-status-deleted {
+  background: rgba(239, 68, 68, 0.2);
+  color: #ef4444;
+}
+
+.diff-status-modified {
+  background: rgba(217, 119, 6, 0.2);
+  color: #d97706;
+}
+
+.diff-content {
+  flex: 1;
+  overflow: auto;
+  padding: 8px 0;
+  font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.diff-line {
+  display: flex;
+  padding: 0 16px;
+  min-height: 20px;
+}
+
+.diff-line-ctx {
+  background: transparent;
+  color: #808080;
+}
+
+.diff-line-add {
+  background: rgba(34, 197, 94, 0.15);
+  color: #4ade80;
+}
+
+.diff-line-del {
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+}
+
+.diff-line-prefix {
+  width: 20px;
+  flex-shrink: 0;
+  color: inherit;
+  user-select: none;
+}
+
+.diff-line-content {
+  flex: 1;
+  white-space: pre-wrap;
+  word-break: break-all;
+}

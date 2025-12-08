@@ -5,9 +5,10 @@ import { useEffect, useState, useRef } from 'react';
 export default function SynthesizePage() {
   // Explorer state
   const [explorerTab, setExplorerTab] = useState('source'); // 'source' | 'knowledge'
-  const [sourceFiles, setSourceFiles] = useState([]);
+  const [sourceTree, setSourceTree] = useState(null);
   const [knowledgeFiles, setKnowledgeFiles] = useState([]);
   const [loadingFiles, setLoadingFiles] = useState(true);
+  const [expandedFolders, setExpandedFolders] = useState({});
 
   // Viewer state
   const [selectedFile, setSelectedFile] = useState(null); // { path, type: 'source' | 'knowledge' }
@@ -43,6 +44,71 @@ export default function SynthesizePage() {
   // Get the filename from a path
   function getFileName(path) {
     return path.split('/').pop();
+  }
+
+  // Convert a list of file paths into a folder tree
+  function buildTree(paths, baseDir) {
+    if (!Array.isArray(paths) || paths.length === 0) {
+      return null;
+    }
+
+    const rootPath = baseDir || '';
+    const rootName = rootPath ? getFileName(rootPath) : 'Source';
+    const root = { name: rootName, path: rootPath, type: 'folder', children: [] };
+    const dirMap = new Map();
+    dirMap.set(rootPath || '__root__', root);
+
+    function toRelative(absPath) {
+      if (rootPath && absPath.startsWith(rootPath)) {
+        const trimmed = absPath.slice(rootPath.length);
+        return trimmed.startsWith('/') ? trimmed.slice(1) : trimmed;
+      }
+      return absPath;
+    }
+
+    function ensureDir(parts, idx, parentNode) {
+      const dirParts = parts.slice(0, idx + 1);
+      const key = (rootPath ? `${rootPath}/` : '') + dirParts.join('/');
+      if (!dirMap.has(key)) {
+        const dirNode = {
+          name: parts[idx],
+          path: key,
+          type: 'folder',
+          children: [],
+        };
+        dirMap.set(key, dirNode);
+        parentNode.children.push(dirNode);
+        return dirNode;
+      }
+      return dirMap.get(key);
+    }
+
+    for (const absPath of paths) {
+      const relPath = toRelative(absPath);
+      const parts = relPath.split('/').filter(Boolean);
+      if (parts.length === 0) continue;
+
+      let parent = root;
+      parts.forEach((part, idx) => {
+        const isLast = idx === parts.length - 1;
+        if (isLast) {
+          parent.children.push({ name: part, path: absPath, type: 'file' });
+        } else {
+          parent = ensureDir(parts, idx, parent);
+        }
+      });
+    }
+
+    function sortNode(node) {
+      if (!node.children) return;
+      node.children.sort((a, b) => {
+        if (a.type !== b.type) return a.type === 'folder' ? -1 : 1;
+        return a.name.localeCompare(b.name);
+      });
+      node.children.forEach(sortNode);
+    }
+    sortNode(root);
+    return root;
   }
 
   // Check if selected file has pending changes
@@ -99,7 +165,15 @@ export default function SynthesizePage() {
         const dirFilesRes = await fetch(`/api/dir-files?dir=${encodeURIComponent(projectInfo.inputDir)}`);
         const dirFilesData = await dirFilesRes.json();
         if (Array.isArray(dirFilesData?.files)) {
-          setSourceFiles(dirFilesData.files);
+          const tree = buildTree(dirFilesData.files, projectInfo.inputDir);
+          setSourceTree(tree);
+          if (tree) {
+            setExpandedFolders((prev) => {
+              const key = tree.path || '__root__';
+              if (prev[key]) return prev;
+              return { ...prev, [key]: true };
+            });
+          }
         }
       }
 
@@ -428,7 +502,50 @@ export default function SynthesizePage() {
     );
   }
 
-  const currentFiles = explorerTab === 'source' ? sourceFiles : knowledgeFiles;
+  function toggleFolder(pathKey) {
+    setExpandedFolders((prev) => ({
+      ...prev,
+      [pathKey]: !prev[pathKey],
+    }));
+  }
+
+  function renderTree(node, depth = 0) {
+    if (!node) return null;
+    const isFolder = node.type === 'folder';
+    const pathKey = node.path || '__root__';
+    const isExpanded = expandedFolders[pathKey] ?? false;
+    const paddingLeft = 12 + depth * 12;
+
+    if (isFolder) {
+      return (
+        <div key={pathKey}>
+          <div
+            className="explorer-file-item explorer-folder"
+            style={{ paddingLeft }}
+            onClick={() => toggleFolder(pathKey)}
+            title={node.path || 'Source'}
+          >
+            <span className={`folder-caret ${isExpanded ? 'open' : ''}`}>▸</span>
+            <span className="folder-label">{node.name || 'Source'}</span>
+          </div>
+          {isExpanded &&
+            node.children?.map((child) => renderTree(child, depth + 1))}
+        </div>
+      );
+    }
+
+    return (
+      <div
+        key={node.path}
+        className={`explorer-file-item explorer-file ${selectedFile?.path === node.path ? 'active' : ''}`}
+        style={{ paddingLeft }}
+        onClick={() => selectFile(node.path, 'source')}
+        title={node.path}
+      >
+        {node.name}
+      </div>
+    );
+  }
   const pendingChangeCount = Object.keys(pendingChanges).length;
 
   return (
@@ -455,29 +572,31 @@ export default function SynthesizePage() {
         <div className="explorer-file-list">
           {loadingFiles ? (
             <div className="explorer-empty">Loading...</div>
-          ) : currentFiles.length === 0 ? (
-            <div className="explorer-empty">
-              {explorerTab === 'source' 
-                ? 'No source files found' 
-                : 'No knowledge base files'}
-            </div>
+        ) : explorerTab === 'source' ? (
+          !sourceTree || !sourceTree.children?.length ? (
+            <div className="explorer-empty">No source files found</div>
           ) : (
-            currentFiles.map((filePath) => {
-              const fileName = getFileName(filePath);
-              const hasPending = explorerTab === 'knowledge' && pendingChanges[fileName];
-              return (
-                <div
-                  key={filePath}
-                  className={`explorer-file-item ${selectedFile?.path === filePath ? 'active' : ''} ${hasPending ? 'has-pending-change' : ''}`}
-                  onClick={() => selectFile(filePath, explorerTab === 'source' ? 'source' : 'knowledge')}
-                  title={filePath}
-                >
-                  {hasPending && <span className="file-change-indicator"></span>}
-                  {fileName}
-                </div>
-              );
-            })
-          )}
+            renderTree(sourceTree)
+          )
+        ) : knowledgeFiles.length === 0 ? (
+          <div className="explorer-empty">No knowledge base files</div>
+        ) : (
+          knowledgeFiles.map((filePath) => {
+            const fileName = getFileName(filePath);
+            const hasPending = pendingChanges[fileName];
+            return (
+              <div
+                key={filePath}
+                className={`explorer-file-item ${selectedFile?.path === filePath ? 'active' : ''} ${hasPending ? 'has-pending-change' : ''}`}
+                onClick={() => selectFile(filePath, 'knowledge')}
+                title={filePath}
+              >
+                {hasPending && <span className="file-change-indicator"></span>}
+                {fileName}
+              </div>
+            );
+          })
+        )}
           {/* Show added files that aren't in the KB list yet */}
           {explorerTab === 'knowledge' && Object.entries(pendingChanges)
             .filter(([filename, change]) => change.status === 'added')

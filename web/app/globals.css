@@ -114,6 +114,28 @@ body {
   color: #ffffff;
 }
 
+.explorer-folder {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  user-select: none;
+}
+
+.folder-caret {
+  display: inline-block;
+  width: 12px;
+  color: #cccccc;
+  transition: transform 0.1s ease;
+}
+
+.folder-caret.open {
+  transform: rotate(90deg);
+}
+
+.folder-label {
+  color: #cccccc;
+}
+
 .explorer-empty {
   padding: 16px;
   color: #808080;

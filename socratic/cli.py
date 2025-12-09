@@ -4,7 +4,6 @@ from .synth import build_synth_parser, run_synth
 from .create import build_create_parser, run_create
 from .compose import build_compose_parser, run_compose
 
-
 def build_root_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="socratic-cli",
@@ -12,7 +11,7 @@ def build_root_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "command",
-        choices=["synth", "create", "compose"],
+        choices=["synth", "create", "compose", "update"],
         help="Subcommand to run",
     )
     return parser

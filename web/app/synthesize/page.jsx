@@ -1,1253 +1,744 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { useSelectedFiles } from '../selected-files-context';
+import { useEffect, useState, useRef } from 'react';
 
 export default function SynthesizePage() {
-  const [showPicker, setShowPicker] = useState(false);
-  const [currentDir, setCurrentDir] = useState(null);
-  const [dirItems, setDirItems] = useState([]);
-  const [loadingDir, setLoadingDir] = useState(false);
-  const { selectedPaths, setSelectedPaths, activePath, setActivePath } = useSelectedFiles();
-  const [fileContents, setFileContents] = useState({}); // path -> content
+  // Explorer state
+  const [explorerTab, setExplorerTab] = useState('source'); // 'source' | 'knowledge'
+  const [sourceTree, setSourceTree] = useState(null);
+  const [knowledgeFiles, setKnowledgeFiles] = useState([]);
+  const [loadingFiles, setLoadingFiles] = useState(true);
+  const [expandedFolders, setExpandedFolders] = useState({});
+
+  // Viewer state
+  const [selectedFile, setSelectedFile] = useState(null); // { path, type: 'source' | 'knowledge' }
+  const [fileContent, setFileContent] = useState('');
+  const [editedContent, setEditedContent] = useState('');
   const [loadingContent, setLoadingContent] = useState(false);
-  const [selectedDir, setSelectedDir] = useState('');
-  const [synthesizeSession, setSynthesizeSession] = useState(null); // { id, status }
-  const [logLines, setLogLines] = useState([]);
-  const [inputText, setInputText] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  // Agent chat state
+  const [sessionId, setSessionId] = useState(null);
+  const [logs, setLogs] = useState([]);
+  const [chatStatus, setChatStatus] = useState('idle'); // 'idle' | 'running' | 'exited'
+  const [startingSession, setStartingSession] = useState(false);
+  const [userInput, setUserInput] = useState('');
+  const [sendingInput, setSendingInput] = useState(false);
+  const terminalRef = useRef(null);
   const eventSourceRef = useRef(null);
-  const [activeTab, setActiveTab] = useState('source'); // 'source' | 'agent' | 'knowledge'
-  const chatContainerRef = useRef(null);
-  const [knowledgeBase, setKnowledgeBase] = useState(null); // { knowledge_units: [...] }
-  const [editedKnowledgeBase, setEditedKnowledgeBase] = useState(null);
-  const [hasKnowledgeChanges, setHasKnowledgeChanges] = useState(false);
-  const [savingKnowledge, setSavingKnowledge] = useState(false);
-  const [saveSuccess, setSaveSuccess] = useState(false);
-  const [expandedUnits, setExpandedUnits] = useState(new Set()); // Set of expanded unit IDs
-  const [returnToTab, setReturnToTab] = useState(null); // Track which tab to return to after agent session
 
-  function parseLogLinesToMessages(lines) {
-    // Parse log lines into structured messages
-    const messages = [];
-    for (const line of lines) {
-      if (line.startsWith('› ')) {
-        // User message
-        const text = line.slice(2).trim();
-        if (text) {
-          messages.push({ type: 'user', text });
-        }
-      } else if (line.startsWith('[INFO]') || line.startsWith('[ERR]')) {
-        // System message
-        if (line.trim()) {
-          messages.push({ type: 'system', text: line });
-        }
-      } else {
-        // Agent message - keep empty lines for agent output formatting
-        messages.push({ type: 'agent', text: line });
-      }
-    }
-    return messages;
+  // KB approval state
+  const [pendingChanges, setPendingChanges] = useState({}); // { filename: { status, diff, oldContent, newContent } }
+  const [acceptingFile, setAcceptingFile] = useState(null);
+  const [rejectingFile, setRejectingFile] = useState(null);
+
+  // Strip ANSI escape codes from text
+  function stripAnsi(text) {
+    // eslint-disable-next-line no-control-regex
+    return text.replace(/\x1b\[[0-9;]*m/g, '');
   }
 
-  function ansiToHtml(input) {
-    if (!input) return '';
-    const escapeHtml = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    const colorMap = {
-      30: '#000000', 31: '#dc2626', 32: '#16a34a', 33: '#ca8a04', 34: '#2563eb', 35: '#7c3aed', 36: '#0891b2', 37: '#e5e7eb',
-      90: '#6b7280', 91: '#ef4444', 92: '#22c55e', 93: '#eab308', 94: '#3b82f6', 95: '#a855f7', 96: '#06b6d4', 97: '#ffffff'
-    };
-    let html = '';
-    let i = 0;
-    let openSpan = null; // { color, fontWeight }
-    const open = (style) => {
-      const parts = [];
-      if (style.fontWeight === 'bold') parts.push('font-weight:bold');
-      if (style.color) parts.push(`color:${style.color}`);
-      html += `<span style="${parts.join(';')}">`;
-      openSpan = style;
-    };
-    const close = () => {
-      if (openSpan) {
-        html += '</span>';
-        openSpan = null;
-      }
-    };
-    const len = input.length;
-    while (i < len) {
-      const ch = input.charCodeAt(i);
-      if (ch === 27 /* ESC */ && i + 1 < len && input[i + 1] === '[') {
-        // Parse CSI "\x1b[...m"
-        let j = i + 2;
-        let codeStr = '';
-        while (j < len && input[j] !== 'm') {
-          codeStr += input[j++];
-        }
-        if (j < len && input[j] === 'm') {
-          // Apply SGR codes
-          const codes = codeStr.split(';').filter(Boolean).map((c) => parseInt(c, 10));
-          // Reset default when empty
-          if (codes.length === 0) codes.push(0);
-          // Build new style
-          let nextStyle = openSpan ? { ...openSpan } : { color: null, fontWeight: null };
-          for (const code of codes) {
-            if (code === 0) { // reset
-              nextStyle = { color: null, fontWeight: null };
-            } else if (code === 1) { // bold
-              nextStyle.fontWeight = 'bold';
-            } else if (code >= 30 && code <= 37) {
-              nextStyle.color = colorMap[code] || nextStyle.color;
-            } else if (code >= 90 && code <= 97) {
-              nextStyle.color = colorMap[code] || nextStyle.color;
-            } else if (code === 39) { // default fg
-              nextStyle.color = null;
-            } else if (code === 22) { // normal intensity
-              nextStyle.fontWeight = null;
-            }
-            // Background and extended colors skipped for simplicity
-          }
-          // If style changed, close/open
-          const changed = !openSpan || openSpan.color !== nextStyle.color || openSpan.fontWeight !== nextStyle.fontWeight;
-          if (changed) {
-            close();
-            if (nextStyle.color || nextStyle.fontWeight) open(nextStyle);
-          }
-          i = j + 1;
-          continue;
-        }
-      }
-      // Regular char
-      if (input[i] === '\n') {
-        html += '\n';
-      } else if (input[i] === '\r') {
-        // skip carriage return
-      } else {
-        html += escapeHtml(input[i]);
-      }
-      i++;
-    }
-    close();
-    return html;
+  // Track if content has been modified
+  const hasChanges = selectedFile?.type === 'knowledge' && editedContent !== fileContent;
+
+  // Get the filename from a path
+  function getFileName(path) {
+    return path.split('/').pop();
   }
 
-  const hasSelection = selectedPaths.length > 0;
+  // Convert a list of file paths into a folder tree
+  function buildTree(paths, baseDir) {
+    if (!Array.isArray(paths) || paths.length === 0) {
+      return null;
+    }
 
-  // selection persistence handled by SelectedFilesProvider
+    const rootPath = baseDir || '';
+    const rootName = rootPath ? getFileName(rootPath) : 'Source';
+    const root = { name: rootName, path: rootPath, type: 'folder', children: [] };
+    const dirMap = new Map();
+    dirMap.set(rootPath || '__root__', root);
 
-  // Load project info and auto-load directory on mount
+    function toRelative(absPath) {
+      if (rootPath && absPath.startsWith(rootPath)) {
+        const trimmed = absPath.slice(rootPath.length);
+        return trimmed.startsWith('/') ? trimmed.slice(1) : trimmed;
+      }
+      return absPath;
+    }
+
+    function ensureDir(parts, idx, parentNode) {
+      const dirParts = parts.slice(0, idx + 1);
+      const key = (rootPath ? `${rootPath}/` : '') + dirParts.join('/');
+      if (!dirMap.has(key)) {
+        const dirNode = {
+          name: parts[idx],
+          path: key,
+          type: 'folder',
+          children: [],
+        };
+        dirMap.set(key, dirNode);
+        parentNode.children.push(dirNode);
+        return dirNode;
+      }
+      return dirMap.get(key);
+    }
+
+    for (const absPath of paths) {
+      const relPath = toRelative(absPath);
+      const parts = relPath.split('/').filter(Boolean);
+      if (parts.length === 0) continue;
+
+      let parent = root;
+      parts.forEach((part, idx) => {
+        const isLast = idx === parts.length - 1;
+        if (isLast) {
+          parent.children.push({ name: part, path: absPath, type: 'file' });
+        } else {
+          parent = ensureDir(parts, idx, parent);
+        }
+      });
+    }
+
+    function sortNode(node) {
+      if (!node.children) return;
+      node.children.sort((a, b) => {
+        if (a.type !== b.type) return a.type === 'folder' ? -1 : 1;
+        return a.name.localeCompare(b.name);
+      });
+      node.children.forEach(sortNode);
+    }
+    sortNode(root);
+    return root;
+  }
+
+  // Check if selected file has pending changes
+  const selectedFileName = selectedFile ? getFileName(selectedFile.path) : null;
+  const selectedFilePendingChange = selectedFileName ? pendingChanges[selectedFileName] : null;
+
+  // Load files on mount
   useEffect(() => {
-    const loadProjectAndState = async () => {
-      try {
-        // Get project info to load input_dir
-        const projectInfoResponse = await fetch('/api/project-info');
-        const projectInfo = await projectInfoResponse.json();
-        
-        if (projectInfo.inputDir) {
-          // Auto-load the input directory from project.yaml
-          const inputDir = projectInfo.inputDir;
-          
-          // Load all files from the input directory
-          const resp = await fetch(`/api/dir-files?dir=${encodeURIComponent(inputDir)}`);
-          const data = await resp.json();
-          
-          if (Array.isArray(data?.files)) {
-            setSelectedPaths(data.files);
-            setSelectedDir(inputDir);
-            if (!activePath || (data.files.length > 0 && !data.files.includes(activePath))) {
-              setActivePath(data.files[0] || null);
-            }
-          } else {
-            setSelectedDir(inputDir);
-          }
-        }
-        
-        // Get current project root
-        const dirResponse = await fetch('/api/dir');
-        const dirData = await dirResponse.json();
-        const currentProjectRoot = dirData.cwd;
-        
-        // Check if saved data is from the same project
-        const savedProjectRoot = localStorage.getItem('socratic:synthesize:projectRoot');
-        
-        // If project changed, clear all cached data
-        if (savedProjectRoot && savedProjectRoot !== currentProjectRoot) {
-          console.log('Project changed, clearing cached data');
-          localStorage.removeItem('socratic:synthesize:session');
-          localStorage.removeItem('socratic:synthesize:logs');
-          localStorage.removeItem('socratic:synthesize:selectedDir');
-          localStorage.removeItem('socratic:synthesize:projectRoot');
-        }
-        
-        // Store current project root
-        localStorage.setItem('socratic:synthesize:projectRoot', currentProjectRoot);
-        
-        const savedSession = localStorage.getItem('socratic:synthesize:session');
-        const savedLogs = localStorage.getItem('socratic:synthesize:logs');
-        
-        if (savedSession) {
-          const session = JSON.parse(savedSession);
-          setSynthesizeSession(session);
-          
-          // Restore logs
-          if (savedLogs) {
-            setLogLines(JSON.parse(savedLogs));
-          }
-          
-          // If session is still running, reconnect to the stream
-          if (session.status === 'running') {
-            reconnectToSession(session.id);
-          }
-        }
-
-        // Check for knowledge base file
-        const kbResponse = await fetch('/api/knowledge-base');
-        const kbData = await kbResponse.json();
-        if (kbData.exists && kbData.data) {
-          setKnowledgeBase(kbData.data);
-          setEditedKnowledgeBase(kbData.data);
-          // Switch to knowledge base tab if file exists
-          setActiveTab('knowledge');
-        }
-      } catch (err) {
-        console.log('Error loading project and session state:', err);
-      }
-    };
-    
-    loadProjectAndState();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    loadFiles();
   }, []);
 
-  // Persist selected directory when it changes
+  // Auto-scroll terminal to bottom when logs change
   useEffect(() => {
-    try {
-      if (selectedDir) {
-        localStorage.setItem('socratic:synthesize:selectedDir', selectedDir);
-      } else {
-        localStorage.removeItem('socratic:synthesize:selectedDir');
-      }
-    } catch (err) {
-      console.log('Error saving selected directory:', err);
+    if (terminalRef.current) {
+      terminalRef.current.scrollTop = terminalRef.current.scrollHeight;
     }
-  }, [selectedDir]);
-
-  // Persist synthesize session when it changes
-  useEffect(() => {
-    try {
-      if (synthesizeSession) {
-        localStorage.setItem('socratic:synthesize:session', JSON.stringify(synthesizeSession));
-      } else {
-        localStorage.removeItem('socratic:synthesize:session');
-      }
-    } catch (err) {
-      console.log('Error saving synthesize session:', err);
-    }
-  }, [synthesizeSession]);
-
-  // Persist log lines when they change
-  useEffect(() => {
-    try {
-      if (logLines.length > 0) {
-        localStorage.setItem('socratic:synthesize:logs', JSON.stringify(logLines));
-      } else {
-        localStorage.removeItem('socratic:synthesize:logs');
-      }
-    } catch (err) {
-      console.log('Error saving logs:', err);
-    }
-  }, [logLines]);
+  }, [logs]);
 
   // Cleanup EventSource on unmount
   useEffect(() => {
     return () => {
       if (eventSourceRef.current) {
         eventSourceRef.current.close();
-        eventSourceRef.current = null;
       }
     };
   }, []);
 
-  function openPicker() {
-    setShowPicker(true);
-    if (!currentDir && !loadingDir) {
-      setLoadingDir(true);
-      fetch('/api/dir')
-        .then((r) => r.json())
-        .then((data) => {
-          setCurrentDir(data.cwd || '/');
-          setDirItems(Array.isArray(data.items) ? data.items : []);
-        })
-        .catch(() => {
-          setCurrentDir('/');
-          setDirItems([]);
-        })
-        .finally(() => setLoadingDir(false));
+  // Fetch KB diffs
+  async function fetchKbDiff() {
+    try {
+      const res = await fetch('/api/kb-diff');
+      const data = await res.json();
+      
+      if (data.changedFiles && Array.isArray(data.changedFiles)) {
+        const changesMap = {};
+        for (const change of data.changedFiles) {
+          changesMap[change.filename] = change;
+        }
+        setPendingChanges(changesMap);
+      }
+    } catch (err) {
+      console.error('Error fetching KB diff:', err);
     }
   }
 
-  function navigateTo(dir) {
-    setLoadingDir(true);
-    fetch(`/api/dir?dir=${encodeURIComponent(dir)}`)
+  async function loadFiles() {
+    setLoadingFiles(true);
+    try {
+      // Load source files from input_dir
+      const projectInfoRes = await fetch('/api/project-info');
+      const projectInfo = await projectInfoRes.json();
+      
+      if (projectInfo.inputDir) {
+        const dirFilesRes = await fetch(`/api/dir-files?dir=${encodeURIComponent(projectInfo.inputDir)}`);
+        const dirFilesData = await dirFilesRes.json();
+        if (Array.isArray(dirFilesData?.files)) {
+          const tree = buildTree(dirFilesData.files, projectInfo.inputDir);
+          setSourceTree(tree);
+          if (tree) {
+            setExpandedFolders((prev) => {
+              const key = tree.path || '__root__';
+              if (prev[key]) return prev;
+              return { ...prev, [key]: true };
+            });
+          }
+        }
+      }
+
+      // Load knowledge base files
+      const kbRes = await fetch('/api/knowledge-base');
+      const kbData = await kbRes.json();
+      if (kbData.exists && Array.isArray(kbData.files)) {
+        setKnowledgeFiles(kbData.files);
+      }
+
+      // Also fetch KB diffs
+      await fetchKbDiff();
+    } catch (err) {
+      console.error('Error loading files:', err);
+    } finally {
+      setLoadingFiles(false);
+    }
+  }
+
+  // Load file content when a file is selected
+  useEffect(() => {
+    if (!selectedFile) {
+      setFileContent('');
+      setEditedContent('');
+      return;
+    }
+
+    setLoadingContent(true);
+    fetch(`/api/file?path=${encodeURIComponent(selectedFile.path)}`)
       .then((r) => r.json())
       .then((data) => {
-        setCurrentDir(data.cwd || dir);
-        setDirItems(Array.isArray(data.items) ? data.items : []);
+        const content = data?.content || '';
+        setFileContent(content);
+        setEditedContent(content);
       })
       .catch(() => {
-        // keep currentDir as-is on error
+        setFileContent('[Error loading file]');
+        setEditedContent('[Error loading file]');
       })
-      .finally(() => setLoadingDir(false));
+      .finally(() => setLoadingContent(false));
+  }, [selectedFile?.path]);
+
+  function selectFile(path, type) {
+    // If there are unsaved changes, confirm before switching
+    if (hasChanges) {
+      if (!confirm('You have unsaved changes. Discard them?')) {
+        return;
+      }
+    }
+    setSelectedFile({ path, type });
   }
 
-  function goUp() {
-    if (!currentDir) return;
-    const trimmed = currentDir.replace(/\/+$/, '');
-    if (trimmed === '/') return;
-    const idx = trimmed.lastIndexOf('/');
-    const parent = idx <= 0 ? '/' : trimmed.slice(0, idx);
-    navigateTo(parent);
+  async function saveFile() {
+    if (!selectedFile || selectedFile.type !== 'knowledge' || !hasChanges) return;
+    
+    setSaving(true);
+    try {
+      const res = await fetch('/api/knowledge-base', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: selectedFile.path, content: editedContent })
+      });
+      
+      if (res.ok) {
+        setFileContent(editedContent);
+      } else {
+        const data = await res.json();
+        alert('Failed to save: ' + (data.error || 'Unknown error'));
+      }
+    } catch (err) {
+      alert('Failed to save: ' + err.message);
+    } finally {
+      setSaving(false);
+    }
   }
 
-  function togglePath(path) {
-    setSelectedPaths((prev) =>
-      prev.includes(path) ? prev.filter((p) => p !== path) : [...prev, path]
+  // Stop the current session
+  async function stopSession() {
+    if (!sessionId) return;
+    
+    // Close the event source
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close();
+      eventSourceRef.current = null;
+    }
+    
+    try {
+      await fetch('/api/synthesize/stop', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId })
+      });
+    } catch (err) {
+      console.error('Error stopping session:', err);
+    }
+    
+    setSessionId(null);
+    setChatStatus('idle');
+  }
+
+  // Start a new session
+  async function startSession() {
+    setStartingSession(true);
+    
+    // Stop existing session first
+    if (sessionId) {
+      await stopSession();
+    }
+    
+    // Clear logs and pending changes for new session
+    setLogs([]);
+    setPendingChanges({});
+    
+    try {
+      // Get project info to get inputDir
+      const projectInfoRes = await fetch('/api/project-info');
+      const projectInfo = await projectInfoRes.json();
+      
+      if (!projectInfo.inputDir) {
+        setLogs([{ type: 'agent', content: '[ERROR] No inputDir found in project configuration' }]);
+        setStartingSession(false);
+        return;
+      }
+      
+      // Start the session
+      const res = await fetch('/api/synthesize/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ inputDir: projectInfo.inputDir })
+      });
+      
+      const data = await res.json();
+      
+      if (!res.ok || !data.sessionId) {
+        setLogs([{ type: 'agent', content: `[ERROR] Failed to start session: ${data.error || 'Unknown error'}` }]);
+        setStartingSession(false);
+        return;
+      }
+      
+      const newSessionId = data.sessionId;
+      setSessionId(newSessionId);
+      setChatStatus('running');
+      
+      // Subscribe to SSE stream
+      const eventSource = new EventSource(`/api/synthesize/stream?session=${newSessionId}`);
+      eventSourceRef.current = eventSource;
+      
+      eventSource.onmessage = (event) => {
+        try {
+          const msg = JSON.parse(event.data);
+          if (msg.type === 'log') {
+            setLogs((prev) => [...prev, { type: 'agent', content: msg.line }]);
+            // Check for KB changes after receiving agent messages
+            // We debounce this by checking on non-empty lines that aren't status messages
+            const line = msg.line.trim();
+            if (line && !line.startsWith('[') && !line.includes('in progress')) {
+              fetchKbDiff();
+            }
+          } else if (msg.type === 'status') {
+            setChatStatus(msg.status);
+            // Fetch diffs when agent finishes a response
+            if (msg.status === 'waiting' || msg.status === 'exited') {
+              fetchKbDiff();
+            }
+            if (msg.status === 'exited' || msg.status === 'error') {
+              eventSource.close();
+              eventSourceRef.current = null;
+            }
+          }
+        } catch (e) {
+          // Ignore parse errors (e.g., keep-alive comments)
+        }
+      };
+      
+      eventSource.onerror = () => {
+        setChatStatus('exited');
+        eventSource.close();
+        eventSourceRef.current = null;
+      };
+      
+    } catch (err) {
+      setLogs([{ type: 'agent', content: `[ERROR] ${err.message}` }]);
+      setChatStatus('idle');
+    } finally {
+      setStartingSession(false);
+    }
+  }
+
+  // Handle new chat session button click
+  function handleNewSession() {
+    startSession();
+  }
+
+  // Send user input to the running process
+  async function sendInput() {
+    if (!sessionId || !userInput.trim() || sendingInput) return;
+    
+    const messageText = userInput;
+    setSendingInput(true);
+    
+    // Add user message to logs immediately
+    setLogs((prev) => [...prev, { type: 'user', content: messageText }]);
+    
+    try {
+      const res = await fetch('/api/synthesize/input', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId, text: messageText })
+      });
+      
+      if (res.ok) {
+        setUserInput('');
+      } else {
+        const data = await res.json();
+        console.error('Failed to send input:', data.error);
+      }
+    } catch (err) {
+      console.error('Error sending input:', err);
+    } finally {
+      setSendingInput(false);
+    }
+  }
+
+  // Handle Enter key in input
+  function handleInputKeyDown(e) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendInput();
+    }
+  }
+
+  // Accept changes for a file
+  async function acceptFile(filename) {
+    setAcceptingFile(filename);
+    try {
+      const res = await fetch('/api/kb-accept-file', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filename })
+      });
+      
+      if (res.ok) {
+        // Remove from pending changes
+        setPendingChanges((prev) => {
+          const next = { ...prev };
+          delete next[filename];
+          return next;
+        });
+        // Refresh files list and content
+        await loadFiles();
+        // If we're viewing this file, reload its content
+        if (selectedFileName === filename) {
+          const change = pendingChanges[filename];
+          if (change) {
+            setFileContent(change.newContent);
+            setEditedContent(change.newContent);
+          }
+        }
+      } else {
+        const data = await res.json();
+        alert('Failed to accept: ' + (data.error || 'Unknown error'));
+      }
+    } catch (err) {
+      alert('Failed to accept: ' + err.message);
+    } finally {
+      setAcceptingFile(null);
+    }
+  }
+
+  // Reject changes for a file
+  async function rejectFile(filename) {
+    setRejectingFile(filename);
+    try {
+      const res = await fetch('/api/kb-reject-file', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filename })
+      });
+      
+      if (res.ok) {
+        // Remove from pending changes
+        setPendingChanges((prev) => {
+          const next = { ...prev };
+          delete next[filename];
+          return next;
+        });
+        // Refresh KB diff to ensure state is consistent
+        await fetchKbDiff();
+      } else {
+        const data = await res.json();
+        alert('Failed to reject: ' + (data.error || 'Unknown error'));
+      }
+    } catch (err) {
+      alert('Failed to reject: ' + err.message);
+    } finally {
+      setRejectingFile(null);
+    }
+  }
+
+  // Render diff view
+  function renderDiffView(change) {
+    if (!change || !change.diff) return null;
+
+    return (
+      <div className="diff-view">
+        <div className="diff-header">
+          <span className={`diff-status diff-status-${change.status}`}>
+            {change.status === 'added' ? 'New File' : 
+             change.status === 'deleted' ? 'Deleted' : 'Modified'}
+          </span>
+        </div>
+        <div className="diff-content">
+          {change.diff.map((line, idx) => (
+            <div 
+              key={idx} 
+              className={`diff-line diff-line-${line.type}`}
+            >
+              <span className="diff-line-prefix">
+                {line.type === 'add' ? '+' : line.type === 'del' ? '-' : ' '}
+              </span>
+              <span className="diff-line-content">{line.line}</span>
+            </div>
+          ))}
+        </div>
+      </div>
     );
   }
 
-  async function confirmSelection() {
-    try {
-      if (!currentDir) {
-        setShowPicker(false);
-        return;
-      }
-      const resp = await fetch(`/api/dir-files?dir=${encodeURIComponent(currentDir)}`);
-      const data = await resp.json();
-      if (Array.isArray(data?.files)) {
-        setSelectedPaths(data.files);
-        setSelectedDir(currentDir);
-        if (!activePath || (data.files.length > 0 && !data.files.includes(activePath))) {
-          setActivePath(data.files[0] || null);
-        }
-      } else {
-        setSelectedPaths([]);
-        setSelectedDir(currentDir);
-      }
-    } catch {
-      setSelectedPaths([]);
-      setSelectedDir(currentDir || '');
-    } finally {
-      setShowPicker(false);
-    }
+  function toggleFolder(pathKey) {
+    setExpandedFolders((prev) => ({
+      ...prev,
+      [pathKey]: !prev[pathKey],
+    }));
   }
 
-  function cancelSelection() {
-    setShowPicker(false);
-  }
+  function renderTree(node, depth = 0) {
+    if (!node) return null;
+    const isFolder = node.type === 'folder';
+    const pathKey = node.path || '__root__';
+    const isExpanded = expandedFolders[pathKey] ?? false;
+    const paddingLeft = 12 + depth * 12;
 
-  function reconnectToSession(sessionId) {
-    try {
-      // Close previous stream if any
-      if (eventSourceRef.current) {
-        eventSourceRef.current.close();
-        eventSourceRef.current = null;
-      }
-      
-      const es = new EventSource(`/api/synthesize/stream?session=${encodeURIComponent(sessionId)}`);
-      eventSourceRef.current = es;
-      es.onmessage = (ev) => {
-        try {
-          const payload = JSON.parse(ev.data);
-          if (payload.type === 'log' && typeof payload.line === 'string') {
-            setLogLines((prev) => [...prev, payload.line]);
-          } else if (payload.type === 'status') {
-            setSynthesizeSession((prev) => (prev ? { ...prev, status: payload.status || prev.status } : prev));
-          }
-        } catch {}
-      };
-      es.onerror = () => {
-        // ignore; connection issues handled by browser EventSource
-      };
-    } catch (err) {
-      console.log('Error reconnecting to session:', err);
-    }
-  }
-
-  async function startSynthesize() {
-    if (!selectedDir || (synthesizeSession && synthesizeSession.status === 'running')) return;
-    try {
-      // Close previous stream if any
-      try {
-        if (eventSourceRef.current) {
-          eventSourceRef.current.close();
-          eventSourceRef.current = null;
-        }
-      } catch {}
-      setLogLines([]);
-      const resp = await fetch('/api/synthesize/start', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ inputDir: selectedDir })
-      });
-      const data = await resp.json();
-      if (!resp.ok) throw new Error(data?.error || 'Failed to start synthesize');
-      const sessionId = data.sessionId;
-      setSynthesizeSession({ id: sessionId, status: 'running' });
-      setActiveTab('agent');
-      reconnectToSession(sessionId);
-    } catch (err) {
-      setLogLines((prev) => [...prev, `[ERR] ${err?.message || 'Failed to start synthesize'}`]);
-    }
-  }
-
-  async function startModifyConcept(conceptId) {
-    if (synthesizeSession && synthesizeSession.status === 'running') return;
-    try {
-      // Close previous stream if any
-      try {
-        if (eventSourceRef.current) {
-          eventSourceRef.current.close();
-          eventSourceRef.current = null;
-        }
-      } catch {}
-      setLogLines([]);
-      const resp = await fetch('/api/modify-concept/start', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ conceptId })
-      });
-      const data = await resp.json();
-      if (!resp.ok) throw new Error(data?.error || 'Failed to start modify concept');
-      const sessionId = data.sessionId;
-      setSynthesizeSession({ id: sessionId, status: 'running' });
-      setReturnToTab('knowledge');
-      setActiveTab('agent');
-      reconnectToSession(sessionId);
-    } catch (err) {
-      setLogLines((prev) => [...prev, `[ERR] ${err?.message || 'Failed to start modify concept'}`]);
-    }
-  }
-
-  async function startAddConcept() {
-    if (synthesizeSession && synthesizeSession.status === 'running') return;
-    try {
-      // Close previous stream if any
-      try {
-        if (eventSourceRef.current) {
-          eventSourceRef.current.close();
-          eventSourceRef.current = null;
-        }
-      } catch {}
-      setLogLines([]);
-      const resp = await fetch('/api/add-concept/start', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
-      });
-      const data = await resp.json();
-      if (!resp.ok) throw new Error(data?.error || 'Failed to start add concept');
-      const sessionId = data.sessionId;
-      setSynthesizeSession({ id: sessionId, status: 'running' });
-      setReturnToTab('knowledge');
-      setActiveTab('agent');
-      reconnectToSession(sessionId);
-    } catch (err) {
-      setLogLines((prev) => [...prev, `[ERR] ${err?.message || 'Failed to start add concept'}`]);
-    }
-  }
-
-  async function submitInput() {
-    if (!synthesizeSession || synthesizeSession.status !== 'running' || !inputText) return;
-    const text = inputText;
-    setInputText('');
-    // Echo user input to the console immediately
-    setLogLines((prev) => [...prev, `› ${text}`]);
-    
-    // Check if user typed DONE to return to the previous tab
-    const isDone = text.trim().toUpperCase() === 'DONE';
-    
-    try {
-      await fetch('/api/synthesize/input', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId: synthesizeSession.id, text })
-      });
-      
-      // If DONE was submitted and we have a return tab, switch back after a short delay
-      if (isDone && returnToTab) {
-        setTimeout(async () => {
-          // Reload knowledge base data
-          try {
-            const kbResponse = await fetch('/api/knowledge-base');
-            const kbData = await kbResponse.json();
-            if (kbData.exists && kbData.data) {
-              setKnowledgeBase(kbData.data);
-              setEditedKnowledgeBase(kbData.data);
-              setHasKnowledgeChanges(false);
-            }
-          } catch (err) {
-            console.log('Error reloading knowledge base:', err);
-          }
-          
-          // Switch to the return tab
-          setActiveTab(returnToTab);
-          setReturnToTab(null);
-        }, 3000); // Wait for the process to complete
-      }
-    } catch {}
-  }
-
-  // Auto-scroll chat to bottom when new messages arrive
-  useEffect(() => {
-    if (chatContainerRef.current) {
-      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
-    }
-  }, [logLines]);
-
-  // Refresh knowledge base when switching to the knowledge tab
-  useEffect(() => {
-    if (activeTab === 'knowledge') {
-      const loadKnowledgeBase = async () => {
-        try {
-          const kbResponse = await fetch('/api/knowledge-base');
-          const kbData = await kbResponse.json();
-          if (kbData.exists && kbData.data) {
-            setKnowledgeBase(kbData.data);
-            setEditedKnowledgeBase(kbData.data);
-            setHasKnowledgeChanges(false);
-          }
-        } catch (err) {
-          console.log('Error loading knowledge base:', err);
-        }
-      };
-      loadKnowledgeBase();
-    }
-  }, [activeTab]);
-
-  function toggleUnitExpanded(id) {
-    setExpandedUnits((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) {
-        next.delete(id);
-      } else {
-        next.add(id);
-      }
-      return next;
-    });
-  }
-
-  function updateKnowledgeUnit(id, field, value) {
-    setEditedKnowledgeBase((prev) => {
-      if (!prev || !prev.knowledge_units) return prev;
-      const updated = {
-        ...prev,
-        knowledge_units: prev.knowledge_units.map((unit) =>
-          unit.id === id ? { ...unit, [field]: value } : unit
-        )
-      };
-      return updated;
-    });
-    setHasKnowledgeChanges(true);
-    setSaveSuccess(false);
-  }
-
-  async function saveKnowledgeBase() {
-    if (!editedKnowledgeBase || !hasKnowledgeChanges) return;
-    setSavingKnowledge(true);
-    try {
-      const response = await fetch('/api/knowledge-base', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(editedKnowledgeBase)
-      });
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data?.error || 'Failed to save');
-      }
-      setKnowledgeBase(editedKnowledgeBase);
-      setHasKnowledgeChanges(false);
-      setSaveSuccess(true);
-      setTimeout(() => setSaveSuccess(false), 3000);
-    } catch (err) {
-      alert(`Failed to save: ${err?.message || 'Unknown error'}`);
-    } finally {
-      setSavingKnowledge(false);
-    }
-  }
-
-  async function deleteConcept(conceptId) {
-    if (!confirm(`Are you sure you want to delete this concept?`)) return;
-    try {
-      const response = await fetch('/api/delete-concept', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ conceptId })
-      });
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data?.error || 'Failed to delete');
-      }
-      // Reload knowledge base data
-      const kbResponse = await fetch('/api/knowledge-base');
-      const kbData = await kbResponse.json();
-      if (kbData.exists && kbData.data) {
-        setKnowledgeBase(kbData.data);
-        setEditedKnowledgeBase(kbData.data);
-        setHasKnowledgeChanges(false);
-      }
-    } catch (err) {
-      alert(`Failed to delete: ${err?.message || 'Unknown error'}`);
-    }
-  }
-
-  useEffect(() => {
-    if (!activePath) return;
-    if (fileContents[activePath]) return;
-    setLoadingContent(true);
-    fetch(`/api/file?path=${encodeURIComponent(activePath)}`)
-      .then((r) => r.json())
-      .then((data) => {
-        if (data && typeof data.content === 'string') {
-          setFileContents((prev) => ({ ...prev, [activePath]: data.content }));
-        } else {
-          setFileContents((prev) => ({ ...prev, [activePath]: '[Unable to display file]' }));
-        }
-      })
-      .catch(() => {
-        setFileContents((prev) => ({ ...prev, [activePath]: '[Error loading file]' }));
-      })
-      .finally(() => setLoadingContent(false));
-  }, [activePath, fileContents]);
-
-  const picker = showPicker ? (
-    <div style={styles.modalOverlay}>
-      <div style={styles.modal}>
-        <div style={styles.modalHeader}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <button onClick={goUp} style={styles.buttonSecondary}>Up</button>
-            <span style={{ fontFamily: 'monospace', fontSize: 12, color: '#444' }}>{currentDir || ''}</span>
+    if (isFolder) {
+      return (
+        <div key={pathKey}>
+          <div
+            className="explorer-file-item explorer-folder"
+            style={{ paddingLeft }}
+            onClick={() => toggleFolder(pathKey)}
+            title={node.path || 'Source'}
+          >
+            <span className={`folder-caret ${isExpanded ? 'open' : ''}`}>▸</span>
+            <span className="folder-label">{node.name || 'Source'}</span>
           </div>
+          {isExpanded &&
+            node.children?.map((child) => renderTree(child, depth + 1))}
         </div>
-        <div style={styles.modalBody}>
-          {loadingDir ? (
-            <div>Loading files…</div>
-          ) : !dirItems || dirItems.length === 0 ? (
-            <div>Empty directory.</div>
+      );
+    }
+
+    return (
+      <div
+        key={node.path}
+        className={`explorer-file-item explorer-file ${selectedFile?.path === node.path ? 'active' : ''}`}
+        style={{ paddingLeft }}
+        onClick={() => selectFile(node.path, 'source')}
+        title={node.path}
+      >
+        {node.name}
+      </div>
+    );
+  }
+  const pendingChangeCount = Object.keys(pendingChanges).length;
+
+  return (
+    <div className="three-pane-container">
+      {/* Left Pane: File Explorer */}
+      <div className="explorer-pane">
+        <div className="explorer-tabs">
+          <button
+            className={`explorer-tab ${explorerTab === 'source' ? 'active' : ''}`}
+            onClick={() => setExplorerTab('source')}
+          >
+            Source Docs
+          </button>
+          <button
+            className={`explorer-tab ${explorerTab === 'knowledge' ? 'active' : ''}`}
+            onClick={() => setExplorerTab('knowledge')}
+          >
+            Knowledge Base
+            {pendingChangeCount > 0 && (
+              <span className="pending-badge">{pendingChangeCount}</span>
+            )}
+          </button>
+        </div>
+        <div className="explorer-file-list">
+          {loadingFiles ? (
+            <div className="explorer-empty">Loading...</div>
+        ) : explorerTab === 'source' ? (
+          !sourceTree || !sourceTree.children?.length ? (
+            <div className="explorer-empty">No source files found</div>
           ) : (
-            <div style={styles.fileList}>
-              {dirItems.map((item) => (
-                item.isDir ? (
-                  <div key={item.path} style={styles.dirRow} onClick={() => navigateTo(item.path)}>
-                    <span style={styles.dirName}>📁 {item.name}</span>
+            renderTree(sourceTree)
+          )
+        ) : knowledgeFiles.length === 0 ? (
+          <div className="explorer-empty">No knowledge base files</div>
+        ) : (
+          knowledgeFiles.map((filePath) => {
+            const fileName = getFileName(filePath);
+            const hasPending = pendingChanges[fileName];
+            return (
+              <div
+                key={filePath}
+                className={`explorer-file-item ${selectedFile?.path === filePath ? 'active' : ''} ${hasPending ? 'has-pending-change' : ''}`}
+                onClick={() => selectFile(filePath, 'knowledge')}
+                title={filePath}
+              >
+                {hasPending && <span className="file-change-indicator"></span>}
+                {fileName}
+              </div>
+            );
+          })
+        )}
+          {/* Show added files that aren't in the KB list yet */}
+          {explorerTab === 'knowledge' && Object.entries(pendingChanges)
+            .filter(([filename, change]) => change.status === 'added')
+            .filter(([filename]) => !knowledgeFiles.some(f => getFileName(f) === filename))
+            .map(([filename, change]) => (
+              <div
+                key={`pending-${filename}`}
+                className={`explorer-file-item has-pending-change ${selectedFileName === filename ? 'active' : ''}`}
+                onClick={() => selectFile(change.userPath, 'knowledge')}
+                title={`${filename} (pending)`}
+              >
+                <span className="file-change-indicator file-change-added"></span>
+                {filename}
+              </div>
+            ))
+          }
+        </div>
+      </div>
+
+      {/* Middle Pane: File Viewer */}
+      <div className="viewer-pane">
+        {selectedFile ? (
+          <>
+            <div className="viewer-header">
+              <span className="viewer-filename">{getFileName(selectedFile.path)}</span>
+              <div className="viewer-actions">
+                {selectedFilePendingChange && (
+                  <>
+                    <button
+                      className="viewer-accept-btn"
+                      onClick={() => acceptFile(selectedFileName)}
+                      disabled={acceptingFile === selectedFileName}
+                    >
+                      {acceptingFile === selectedFileName ? 'Accepting...' : 'Accept'}
+                    </button>
+                    <button
+                      className="viewer-reject-btn"
+                      onClick={() => rejectFile(selectedFileName)}
+                      disabled={rejectingFile === selectedFileName}
+                    >
+                      {rejectingFile === selectedFileName ? 'Rejecting...' : 'Reject'}
+                    </button>
+                  </>
+                )}
+                {selectedFile.type === 'knowledge' && !selectedFilePendingChange && (
+                  <button
+                    className="viewer-save-btn"
+                    onClick={saveFile}
+                    disabled={!hasChanges || saving}
+                  >
+                    {saving ? 'Saving...' : 'Save'}
+                  </button>
+                )}
+              </div>
+            </div>
+            <div className="viewer-content">
+              {loadingContent ? (
+                <div className="loading">Loading...</div>
+              ) : selectedFilePendingChange ? (
+                renderDiffView(selectedFilePendingChange)
+              ) : selectedFile.type === 'source' ? (
+                <pre>{fileContent}</pre>
+              ) : (
+                <textarea
+                  className="viewer-textarea"
+                  value={editedContent}
+                  onChange={(e) => setEditedContent(e.target.value)}
+                  spellCheck={false}
+                />
+              )}
+            </div>
+          </>
+        ) : (
+          <div className="viewer-empty">Select a file to view</div>
+        )}
+      </div>
+
+      {/* Right Pane: Agent Chat */}
+      <div className="chat-pane">
+        <div className="chat-header">
+          <span>Agent</span>
+          {sessionId && (
+            <button
+              className="chat-new-session-btn"
+              onClick={handleNewSession}
+              disabled={startingSession}
+            >
+              {startingSession ? 'Starting...' : 'New Chat Session'}
+            </button>
+          )}
+          {sessionId && (
+            <span className={`chat-status chat-status-${chatStatus}`}>
+              {chatStatus === 'running' ? 'Running' : chatStatus === 'exited' ? 'Stopped' : chatStatus}
+            </span>
+          )}
+        </div>
+        <div className="chat-content">
+          {!sessionId && chatStatus === 'idle' ? (
+            <button
+              className="chat-start-btn"
+              onClick={handleNewSession}
+              disabled={startingSession}
+            >
+              {startingSession ? 'Starting...' : 'Start new chat session'}
+            </button>
+          ) : (
+            <div className="chat-terminal" ref={terminalRef}>
+              {logs.map((message, idx) => (
+                message.type === 'user' ? (
+                  <div key={idx} className="chat-user-message">
+                    <div className="chat-user-bubble">
+                      {message.content}
+                    </div>
                   </div>
                 ) : (
-                  <div key={item.path} style={styles.checkboxRow}>
-                    <span style={{ ...styles.checkboxLabel, color: '#666' }}>{item.name}</span>
-                  </div>
+                  <div key={idx} className="chat-terminal-line">{stripAnsi(message.content)}</div>
                 )
               ))}
             </div>
           )}
         </div>
-        <div style={styles.modalFooter}>
-          <button onClick={cancelSelection} style={styles.buttonSecondary}>Cancel</button>
-          <button onClick={confirmSelection} style={styles.buttonPrimary}>Use this directory</button>
-        </div>
-      </div>
-    </div>
-  ) : null;
-
-  return (
-    <div>
-      <div style={styles.tabsHeader}>
-        <button onClick={() => setActiveTab('source')} style={activeTab === 'source' ? styles.tabActive : styles.tab}>Source files</button>
-        <button onClick={() => setActiveTab('agent')} style={activeTab === 'agent' ? styles.tabActive : styles.tab}>Agent</button>
-        <button onClick={() => setActiveTab('knowledge')} style={activeTab === 'knowledge' ? styles.tabActive : styles.tab}>Knowledge Base</button>
-      </div>
-
-      {activeTab === 'knowledge' ? (
-        // Knowledge Base tab
-        <>
-          {knowledgeBase && editedKnowledgeBase ? (
-            <div>
-              <div style={styles.knowledgeBaseHeader}>
-                <button
-                  onClick={saveKnowledgeBase}
-                  disabled={!hasKnowledgeChanges || savingKnowledge}
-                  style={hasKnowledgeChanges && !savingKnowledge ? styles.buttonPrimary : styles.buttonPrimaryDisabled}
-                >
-                  {savingKnowledge ? 'Saving...' : 'Save'}
-                </button>
-                <button
-                  onClick={startAddConcept}
-                  disabled={synthesizeSession && synthesizeSession.status === 'running'}
-                  style={(synthesizeSession && synthesizeSession.status === 'running') ? styles.buttonPrimaryDisabled : styles.buttonPrimary}
-                >
-                  Add
-                </button>
-                {saveSuccess && <span style={styles.saveSuccessMessage}>Saved successfully!</span>}
-              </div>
-              <div style={styles.knowledgeUnitsContainer}>
-                {editedKnowledgeBase.knowledge_units?.map((unit) => {
-                  const isExpanded = expandedUnits.has(unit.id);
-                  return (
-                    <div key={unit.id} style={styles.knowledgeUnitCard}>
-                      <div style={styles.knowledgeUnitHeaderRow}>
-                        <button
-                          onClick={() => toggleUnitExpanded(unit.id)}
-                          style={styles.expandButton}
-                        >
-                          {isExpanded ? '▼' : '▶'}
-                        </button>
-                        <div style={styles.knowledgeUnitHeaderContent} onClick={() => toggleUnitExpanded(unit.id)}>
-                          <span style={styles.headingDisplay}>{unit.heading || 'Untitled'}</span>
-                        </div>
-                        <button
-                          onClick={() => startModifyConcept(unit.id)}
-                          style={styles.modifyButton}
-                          disabled={synthesizeSession && synthesizeSession.status === 'running'}
-                        >
-                          Modify
-                        </button>
-                        <button
-                          onClick={() => deleteConcept(unit.id)}
-                          style={styles.deleteButton}
-                        >
-                          Delete
-                        </button>
-                      </div>
-                      {isExpanded && (
-                        <>
-                          <div style={styles.knowledgeUnitHeader}>
-                            <input
-                              type="text"
-                              value={unit.heading || ''}
-                              onChange={(e) => updateKnowledgeUnit(unit.id, 'heading', e.target.value)}
-                              style={styles.headingInput}
-                              placeholder="Heading"
-                            />
-                          </div>
-                          <div style={styles.knowledgeUnitBody}>
-                            <textarea
-                              value={unit.body || ''}
-                              onChange={(e) => updateKnowledgeUnit(unit.id, 'body', e.target.value)}
-                              style={styles.bodyTextarea}
-                              placeholder="Body content"
-                              rows={15}
-                            />
-                          </div>
-                        </>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          ) : (
-            <div style={styles.emptyState}>
-              <div>No knowledge base found.</div>
-              <div style={{ marginTop: 8, fontSize: 14, color: '#888' }}>
-                Run the synthesize process to generate a knowledge base.
-              </div>
-            </div>
-          )}
-        </>
-      ) : activeTab === 'source' ? (
-        <>
-          {selectedDir ? (
-            <div style={styles.selectedDirBar}>
-              <span style={styles.selectedDirLabel}>Current directory:</span>
-              <span style={styles.selectedDirValue}>{selectedDir}</span>
-            </div>
-          ) : null}
-          <div style={styles.synthesizeBar}>
+        {sessionId && (
+          <div className="chat-input-area">
+            <input
+              type="text"
+              className="chat-input"
+              value={userInput}
+              onChange={(e) => setUserInput(e.target.value)}
+              onKeyDown={handleInputKeyDown}
+              placeholder="Type your response..."
+              disabled={chatStatus !== 'running' || sendingInput}
+            />
             <button
-              style={(!selectedDir || !!(synthesizeSession && synthesizeSession.status === 'running')) ? styles.buttonPrimaryDisabled : styles.buttonPrimary}
-              onClick={startSynthesize}
-              disabled={!selectedDir || !!(synthesizeSession && synthesizeSession.status === 'running')}
+              className="chat-send-btn"
+              onClick={sendInput}
+              disabled={!userInput.trim() || chatStatus !== 'running' || sendingInput}
             >
-              Synthesize
+              {sendingInput ? 'Sending...' : 'Send'}
             </button>
-            {synthesizeSession ? (
-              <span style={styles.runStatus}>
-                {synthesizeSession.status === 'running' ? 'Running…' : synthesizeSession.status === 'exited' ? 'Completed' : synthesizeSession.status}
-              </span>
-            ) : null}
           </div>
-
-          {!hasSelection ? (
-            <div style={styles.emptyState}>
-              <div>Loading source files...</div>
-            </div>
-          ) : (
-            <div style={styles.paneContainer}>
-              <div style={styles.leftPane}>
-                <div style={styles.leftHeader}>
-                  <span>Selected files</span>
-                  <button onClick={openPicker} style={styles.linkButton}>Change</button>
-                </div>
-                <div style={styles.leftList}>
-                  {selectedPaths.map((p) => (
-                    <div
-                      key={p}
-                      onClick={() => setActivePath(p)}
-                      style={p === activePath ? styles.listItemActive : styles.listItem}
-                      title={p}
-                    >
-                      {p.split('/').pop()}
-                    </div>
-                  ))}
-                </div>
-              </div>
-              <div style={styles.rightPane}>
-                <div style={styles.rightHeader}>{activePath ? activePath.split('/').pop() : 'No file selected'}</div>
-                <div style={styles.viewer}>
-                  {activePath ? (
-                    loadingContent && !fileContents[activePath] ? (
-                      <div>Loading…</div>
-                    ) : (
-                      <pre style={styles.pre}>{fileContents[activePath] || ''}</pre>
-                    )
-                  ) : null}
-                </div>
-              </div>
-            </div>
-          )}
-        </>
-      ) : (
-        // Agent tab: chat interface
-        <>
-          {synthesizeSession ? (
-            <div style={styles.logContainer}>
-              <div style={styles.logHeader}>
-                <span>{synthesizeSession.status === 'running' ? 'Running…' : synthesizeSession.status === 'exited' ? 'Completed' : synthesizeSession.status}</span>
-              </div>
-              <div style={styles.chatContainer} ref={chatContainerRef}>
-                {parseLogLinesToMessages(logLines).map((msg, idx) => {
-                  if (msg.type === 'user') {
-                    return (
-                      <div key={idx} style={styles.userMessageRow}>
-                        <div style={styles.userBubble}>{msg.text}</div>
-                      </div>
-                    );
-                  } else if (msg.type === 'system') {
-                    return (
-                      <div key={idx} style={styles.systemMessage}>{msg.text}</div>
-                    );
-                  } else {
-                    return (
-                      <pre key={idx} style={styles.agentMessage} dangerouslySetInnerHTML={{ __html: ansiToHtml(msg.text) }} />
-                    );
-                  }
-                })}
-              </div>
-              <div style={styles.inputRow}>
-                <input
-                  type="text"
-                  value={inputText}
-                  onChange={(e) => setInputText(e.target.value)}
-                  placeholder="Type response for synthesize script…"
-                  style={styles.textInput}
-                  disabled={synthesizeSession.status !== 'running'}
-                  onKeyDown={(e) => { if (e.key === 'Enter') submitInput(); }}
-                />
-                <button onClick={submitInput} style={styles.buttonSecondary} disabled={!inputText || synthesizeSession.status !== 'running'}>
-                  Send
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div style={styles.emptyState}>
-              <div>No synthesize session yet.</div>
-              <div style={{ marginTop: 8, fontSize: 14, color: '#888' }}>
-                Select a directory in the Source files tab and click Synthesize to see results here.
-              </div>
-            </div>
-          )}
-        </>
-      )}
-
-      {picker}
+        )}
+      </div>
     </div>
   );
 }
-
-const styles = {
-  selectedDirBar: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 8
-  },
-  selectedDirLabel: {
-    color: '#555',
-    fontSize: 14
-  },
-  selectedDirValue: {
-    fontSize: 14,
-    color: '#555'
-  },
-  synthesizeBar: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 12,
-    marginBottom: 16
-  },
-  runStatus: {
-    color: '#666'
-  },
-  tabsHeader: {
-    display: 'flex',
-    gap: 8,
-    borderBottom: '1px solid #eee',
-    marginBottom: 12
-  },
-  tab: {
-    padding: '6px 10px',
-    background: '#f3f4f6',
-    color: '#111',
-    border: '1px solid #e5e7eb',
-    borderRadius: 6,
-    cursor: 'pointer'
-  },
-  tabActive: {
-    padding: '6px 10px',
-    background: '#ffffff',
-    color: '#111',
-    border: '1px solid #e5e7eb',
-    borderRadius: 6,
-    cursor: 'pointer'
-  },
-  emptyPicker: {
-    border: '2px dashed #bbb',
-    borderRadius: 8,
-    padding: 24,
-    textAlign: 'center',
-    color: '#666',
-    cursor: 'pointer'
-  },
-  paneContainer: {
-    display: 'grid',
-    gridTemplateColumns: '280px 1fr',
-    gap: 16,
-    minHeight: 480
-  },
-  leftPane: {
-    border: '1px solid #e2e2e2',
-    borderRadius: 8,
-    overflow: 'hidden',
-    display: 'flex',
-    flexDirection: 'column'
-  },
-  leftHeader: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: '8px 12px',
-    borderBottom: '1px solid #eee',
-    background: '#fafafa',
-    fontSize: 14
-  },
-  leftList: {
-    overflow: 'auto'
-  },
-  listItem: {
-    padding: '8px 12px',
-    cursor: 'pointer',
-    whiteSpace: 'nowrap',
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-    fontSize: 13
-  },
-  listItemActive: {
-    padding: '8px 12px',
-    cursor: 'pointer',
-    background: '#eef3ff',
-    whiteSpace: 'nowrap',
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-    fontSize: 13
-  },
-  rightPane: {
-    border: '1px solid #e2e2e2',
-    borderRadius: 8,
-    overflow: 'hidden',
-    display: 'flex',
-    flexDirection: 'column'
-  },
-  rightHeader: {
-    padding: '8px 12px',
-    borderBottom: '1px solid #eee',
-    background: '#fafafa',
-    whiteSpace: 'nowrap',
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-    fontSize: 13
-  },
-  viewer: {
-    height: 520,
-    overflow: 'auto',
-    padding: 12
-  },
-  pre: {
-    margin: 0,
-    whiteSpace: 'pre',
-    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-    fontSize: 13
-  },
-  modalOverlay: {
-    position: 'fixed',
-    inset: 0,
-    background: 'rgba(0,0,0,0.4)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 1000
-  },
-  modal: {
-    background: '#fff',
-    borderRadius: 10,
-    width: 720,
-    maxHeight: '80vh',
-    display: 'flex',
-    flexDirection: 'column',
-    overflow: 'hidden',
-    border: '1px solid #e5e5e5'
-  },
-  modalHeader: {
-    padding: '12px 16px',
-    borderBottom: '1px solid #eee',
-    background: '#fafafa',
-    fontWeight: 600
-  },
-  modalBody: {
-    padding: 16,
-    overflow: 'hidden'
-  },
-  fileList: {
-    overflow: 'auto',
-    maxHeight: '50vh',
-    border: '1px solid #eee',
-    borderRadius: 6,
-    padding: 8
-  },
-  dirRow: {
-    padding: '6px 4px',
-    cursor: 'pointer'
-  },
-  dirName: {
-    fontWeight: 600
-  },
-  checkboxRow: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 8,
-    padding: '6px 4px'
-  },
-  checkboxLabel: {
-    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-    fontSize: 12
-  },
-  modalFooter: {
-    padding: 12,
-    display: 'flex',
-    gap: 8,
-    justifyContent: 'flex-end',
-    borderTop: '1px solid #eee'
-  },
-  buttonPrimary: {
-    padding: '6px 12px',
-    background: '#2b5cff',
-    color: '#fff',
-    border: 'none',
-    borderRadius: 6,
-    cursor: 'pointer'
-  },
-  buttonPrimaryDisabled: {
-    padding: '6px 12px',
-    background: '#ccc',
-    color: '#888',
-    border: 'none',
-    borderRadius: 6,
-    cursor: 'not-allowed'
-  },
-  emptyState: {
-    border: '2px dashed #bbb',
-    borderRadius: 8,
-    padding: 48,
-    textAlign: 'center',
-    color: '#666',
-    marginTop: 16
-  },
-  buttonSecondary: {
-    padding: '6px 12px',
-    background: '#f3f4f6',
-    color: '#111',
-    border: '1px solid #e5e7eb',
-    borderRadius: 6,
-    cursor: 'pointer'
-  },
-  linkButton: {
-    background: 'transparent',
-    border: 'none',
-    color: '#2b5cff',
-    cursor: 'pointer',
-    padding: 0
-  },
-  logContainer: {
-    marginTop: 16,
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 8
-  },
-  chatContainer: {
-    border: '1px solid #e2e2e2',
-    borderRadius: 8,
-    padding: 16,
-    height: 440,
-    overflow: 'auto',
-    background: '#ffffff',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 12
-  },
-  userMessageRow: {
-    display: 'flex',
-    justifyContent: 'flex-end'
-  },
-  userBubble: {
-    background: '#2b5cff',
-    color: '#ffffff',
-    padding: '10px 14px',
-    borderRadius: 18,
-    maxWidth: '70%',
-    wordWrap: 'break-word',
-    fontSize: 14
-  },
-  agentMessage: {
-    margin: 0,
-    padding: 0,
-    whiteSpace: 'pre-wrap',
-    fontSize: 14,
-    color: '#1f2937',
-    lineHeight: 0.5
-  },
-  systemMessage: {
-    fontSize: 12,
-    color: '#9ca3af',
-    textAlign: 'left',
-    fontStyle: 'italic',
-    padding: '4px 0'
-  },
-  logHeader: {
-    padding: '8px 12px',
-    border: '1px solid #e2e2e2',
-    borderRadius: 8,
-    background: '#fafafa',
-    color: '#666'
-  },
-  inputRow: {
-    display: 'flex',
-    gap: 8
-  },
-  textInput: {
-    flex: 1,
-    padding: '6px 10px',
-    border: '1px solid #e5e7eb',
-    borderRadius: 6
-  },
-  knowledgeBaseHeader: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 12,
-    marginBottom: 16
-  },
-  saveSuccessMessage: {
-    color: '#16a34a',
-    fontSize: 14,
-    fontWeight: 500
-  },
-  knowledgeUnitsContainer: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 16
-  },
-  knowledgeUnitCard: {
-    border: '1px solid #e2e2e2',
-    borderRadius: 8,
-    padding: 12,
-    background: '#fafafa'
-  },
-  knowledgeUnitHeaderRow: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 8,
-    cursor: 'pointer'
-  },
-  expandButton: {
-    background: 'transparent',
-    border: 'none',
-    fontSize: 14,
-    cursor: 'pointer',
-    padding: '4px 8px',
-    color: '#666'
-  },
-  knowledgeUnitHeaderContent: {
-    flex: 1,
-    minWidth: 0
-  },
-  headingDisplay: {
-    fontSize: 16,
-    fontWeight: 600,
-    color: '#111',
-    display: 'block',
-    whiteSpace: 'nowrap',
-    overflow: 'hidden',
-    textOverflow: 'ellipsis'
-  },
-  knowledgeUnitHeader: {
-    marginTop: 12,
-    marginBottom: 12
-  },
-  headingInput: {
-    width: '100%',
-    padding: '8px 12px',
-    fontSize: 16,
-    fontWeight: 600,
-    border: '1px solid #d1d5db',
-    borderRadius: 6,
-    background: '#ffffff'
-  },
-  knowledgeUnitBody: {
-    marginTop: 8
-  },
-  bodyTextarea: {
-    width: '100%',
-    padding: '8px 12px',
-    fontSize: 14,
-    lineHeight: 1.6,
-    border: '1px solid #d1d5db',
-    borderRadius: 6,
-    background: '#ffffff',
-    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-    resize: 'vertical',
-    minHeight: 120
-  },
-  modifyButton: {
-    padding: '6px 12px',
-    background: '#f3f4f6',
-    color: '#111',
-    border: '1px solid #e5e7eb',
-    borderRadius: 6,
-    cursor: 'pointer',
-    fontSize: 13,
-    marginLeft: 8
-  },
-  deleteButton: {
-    padding: '6px 12px',
-    background: '#f3f4f6',
-    color: '#dc2626',
-    border: '1px solid #e5e7eb',
-    borderRadius: 6,
-    cursor: 'pointer',
-    fontSize: 13,
-    marginLeft: 8
-  }
-};

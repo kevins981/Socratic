@@ -11,6 +11,10 @@ async function listFilesRecursive(rootDir) {
       if (entry.name === '.socratic') {
         continue;
       }
+      // Skip knowledge_base metadata directory
+      if (entry.isDirectory() && entry.name === 'knowledge_base') {
+        continue;
+      }
       const entryPath = path.join(currentDir, entry.name);
       if (entry.isDirectory()) {
         await walk(entryPath);

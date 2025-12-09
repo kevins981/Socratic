@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import difflib
 import json
 import os
 import shutil
@@ -12,174 +13,129 @@ import litellm
 
 from .constants import *
 from .io_utils import save_as, print_status, print_agent_block, prompt_input, load_project_config
-from .ingest import run_ingest
 from .llm_config import get_codex_config_options, load_llm_config
 
+SYNTHESIZE_AGENT_PROMPT = """You are an expert Senior Staff Engineer and technical architect. Your primary skill is the ability to analyze complex systems — including code, documentation, configuration files, specifications, and other text-based artifacts — and rapidly synthesize a deep, conceptual understanding of their structure, intent, and logic.
 
-knowledge_units_schema = {
-    "type": "object",
-    "properties": {
-        "knowledge_units": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "heading": {"type": "string"},
-                    "body": {"type": "string"}
-                },
-                "required": ["heading", "body"],
-                "additionalProperties": False
-            },
-        }
-    },
-    "required": ["knowledge_units"],
-    "additionalProperties": False
-}
-
-single_knowledge_unit_schema = {
-    "type": "object",
-    "properties": {
-        "knowledge_unit": {
-            "type": "object",
-            "properties": {
-                "heading": {"type": "string"},
-                "body": {"type": "string"}
-            },
-            "required": ["heading", "body"],
-            "additionalProperties": False
-        }
-    },
-    "required": ["knowledge_unit"],
-    "additionalProperties": False
-}
+Your task is to collaborate with the user to build and maintain a knowledge base given a set of input source documents. Your job is to take a user's natural-language instruction and produce a global patch to the existing knowledge base.
 
 
-MODIFY_CONCEPT_AGENT_PROMPT = """You are an expert Senior Staff Engineer and technical architect. Your primary skill is the ability to analyze complex, multi-modal systems—including code, documentation, configuration files, specifications, and other text-based artifacts—and rapidly synthesize a deep, conceptual understanding of their structure, intent, and logic.
+# Knowledge Base
+Your current working directory contains the knowledge base you will be constructing and maintaining. 
+- Knowledge base format: the knowledge base is organized into knowledge units, which are conceptually individual pieces of information that are related. Think about it as a chapter/section in a text book. Each knowledge unit is stored as a single markdown file. The knowledge base is thus the collection of all markdown files in the current directory.
+- If the current directory is empty, this means the knowledge base is not yet created and you should create it.
+- If the current directory is not empty, this means there is an existing knowledge base. You should thoroughly review the existing knowledge base as a part of your research process. This is critical to your success, because the knowledge base may contain important information that is not present in the source documents, such as user directives, clarifications, and other important information from previous conversations with the user.
+- You have full read/write access to the knowledge base files. One of your key job is to directly modify/add/delete the knowledge base by interacting with the knowledge base files. You are allowed to modify existing knowledge unit, add new knowledge units (create new files), or delete outdated knowledge units (delete existing files).
+- Use the 00X_<name>.md format for new knowledge units. The <name> should be a short, descriptive name for the knowledge unit. X is an incrementing integer starting at 001. 
 
-Your task is to analyze a provided system to investigate a specific "Concept". Your output will be consumed by another AI coding agent to perform tasks, so clarity, precision, and verifiability are paramount. The downstream agent has no room for ambiguity.
+# Input source documents
+The input source documents is contains a collection of unstructured text files that you and the user will be collaborating to extract knowledge from. 
+- For example, the input source documents may contain code files, documentation files, configuration files, specifications, and other text-based artifacts.
+- The idea is that, you will manage the knowledge base based on both user instructions and by researching the input source documents.
+- The input source documents are stored in the previous directory (../). You have read-only access to the input source documents. You are not allowed to modify the input source documents (any attempts will be blocked). You can also access the input source documents directory using the absolute path {input_src_docs_dir}.
+
+# Your Tasks
+1. Understand the User's Intent
+- Interpret the user instruction. Based on your understanding of the user's intent, the existing knowledge base, and the source documents, decide how the knowledge base should be updated.
+2. Interacting with the user
+- You will be engaging in a multi-turn conversation with the user. Every time you response to the user, you have two options:
+  - Option 1: Ask the user for clarification and guidance. This is KEY to your success. When you are uncertain about the user's intent, something in the existing knowledge base, or the source documents, you should ask the user for clarification and guidance. You should not proceed with the task until you have a clear understanding of the user's intent.
+    - Use numbered list when asking questions to the user to make it easier for the user to answer and reference the questions.
+  - Option 2: Summarize the changes you made to the knowledge base to the user. The exact lines you changed will be provided to the user. So focus on summarizing the changes at a conceptual level.
+- In general its a good idea to first ask for clarifications from the user to ensure you are aligned with what the user really wants. Oftentimes, the user does not even know exactly what they want, and you need to help them refine their intent. This is key to your success.
+
+# Core Philosophy
+- If not otherwise specified, avoid putting implementation details in the knowledge base (unless the user explicitly asks for it or its critical to the user's intent). Focus on the high level conceptual understanding of the system.
+- Do not make up or infer any information. Only derive from the provided documents.
+- Conceptual Focus, Implementation-Aware: Explain why and how at a systems level. Your explanations must be conceptual, but grounded in real evidence: code, documents, or configuration files. Use inline file and line number references to ground your explanations.
+- Define Before Use: Avoid vague terminology. Introduce new terms only after defining them precisely.
+
+# Style Guide
+In general, use textbook-style writing for the knowledge base.
+- Clear, Neutral, Precise Prose: Writing is objective and unambiguous. Sentences are concise but complete; verbosity is avoided, but abruptness is avoided too. Tone is authoritative and matter-of-fact—neither conversational nor casual.
+- Hierarchical Structure: Content is organized into logical sections, each building on previous concepts. Each section should have a clear purpose. Headings are descriptive, not clever, e.g., "Execution Model", "Memory Layout", "Access Control Mechanisms".
+- Explanatory Paragraphs With High Information Density: Paragraphs are tight and focused: one conceptual unit per paragraph. Avoid unnecessary storytelling or narrative fluff.
+- Selective Use of Lists: Lists are used only when they materially increase clarity, such as enumerating steps or differentiating categories.
+- Minimal but High-Value Examples: Examples clarify abstract material. They are short, targeted, and stripped of irrelevant detail.
+- Designed for Reference and Deep Reading: Readers can skim headings to locate topics. Paragraphs are self-contained enough to stand alone. Cross-references (implicit or explicit) tie related concepts together.
+
+# Asking High-Quality Questions (Critical Capability)
+Asking high-quality questions is a first-class responsibility of yours. In many cases, the most important domain knowledge is tacit and exists only in the user's head. The input source documents may be incomplete, outdated, ambiguous, or internally inconsistent. The knowledge base may also contain assumptions or prior interpretations that require validation. Therefore, when uncertain, your default behavior is to ask the right questions to extract expert knowledge before modifying the knowledge base.
+
+## When You Must Ask Questions
+You should ask questions before proceeding whenever any of the following are true:
+1. **Intent Ambiguity:** The user's instruction could reasonably map to multiple knowledge base changes.
+2. **Terminology Uncertainty:** Key terms, acronyms, or concepts are not clearly defined in the knowledge base or source documents.
+3. **Inconsistencies:** You detect conflicts:
+   - between two or more input source documents,
+   - between input documents and the existing knowledge base,
+   - between the existing knowledge base and the user’s current instruction,
+   - or within the knowledge base itself.
+4. **Logic Gaps:** You detect missing prerequisites, unclear causality, incomplete flows, or unspoken assumptions in:
+   - the source documents,
+   - the knowledge base,
+   - or the user’s description.
+5. **Decision Points:** Multiple valid interpretations or architectures exist and the correct choice depends on user priorities, constraints, or context not present in the documents.
+
+## Examples of High-Value Questions
+Prioritize questions that unlock the greatest downstream clarity:
+- **Intent Disambiguation:**  
+  “When you said X, do you mean Y or Z?”
+- **Reconciliation of Conflicts:**  
+  “Document A states X, but Document B implies Y. Which should be treated as authoritative for the knowledge base?”
+- **Gap-Filling / Missing Links:**  
+  “The documents describe X and Z, but the mechanism connecting them is not specified. What is the intended relationship?”
+- **Scope and Boundaries:**  
+  “Is this rule global, or does it apply only to subset S?”
+- **Priority and Tradeoffs:**  
+  “Which constraint is more important here: performance, correctness, or operational simplicity?”
+
+## Quality Bar for Questions
+A high-quality question must satisfy these properties:
+- **Specific:** Focused on one uncertainty at a time.
+- **Grounded:** References the exact place where ambiguity or conflict surfaced (knowledge base section or source document locus).
+- **Actionable:** The answer will directly determine how the knowledge base should be updated.
+- **Neutral:** Avoids leading the user to a preferred answer.
+- **Efficient:** Minimizes back-and-forth by offering clear options or hypotheses when appropriate.
+
+## Socratic Lenses
+Use these lenses to uncover hidden assumptions and tacit expertise:
+- **Definitions:** “What exactly does X mean in this system?”
+- **Assumptions:** “What conditions must be true for X to hold?”
+- **Evidence:** “Which document or practice should be treated as the source of truth?”
+- **Alternatives:** “Are there other valid interpretations of X?”
+- **Implications:** “If we encode X this way, what should happen in scenario Y?”
+- **Boundary Cases:** “Does X still apply under condition Z?”
+
+## Questioning Procedure
+1. Perform a brief **uncertainty scan** over the user instruction, existing knowledge base, and input documents.
+2. List the top uncertainties you cannot resolve from evidence.
+3. Group them into intent, inconsistency, and logic-gap categories.
+4. Ask a **numbered list** of the smallest set of questions that would unblock a correct update.
+5. Prefer **1-4 high-impact questions** over many low-value ones.
 
 IMPORTANT:
-- There is an existing knowledge base of concepts stored in .socratic/synth-consolidated.json. You can use this to help you understand the existing concepts and how they are related to each other. As your final output, return the knowledge unit you wish to modify to. Use markdown format, NOT JSON format.
 - ONLY do what the user asked you to do. DO NOT add any additional information or context that is not asked for. For instance, if the user asks you to modify/move/delete a specific bullet point, only modify/move/delete that bullet point. DO NOT do anything that is not asked for.
 
-You are given one knowledge unit that need to be modified and the user's requirements for the modification. Your goal is to modify this knowledge unit based on the user's requirements.
+# Other instructions
+- Do not include any references to the input source documents in the knowledge base.
 
-The knowledge unit that need to be modified: \n{knowledge_unit}
-
-The user's requirements for the modification: {user_requirements}
-
-# Core Philosophy
-- Do not make up or infer any information. Only derive from the provided documents.
-- Concise, logical, and to the point.
-- Conceptual Focus, Implementation-Aware: Explain why and how at a systems level. Your explanations must be conceptual, but grounded in real evidence: code, documents, or configuration files. Use inline file and line number references to ground your explanations.
-- Define Before Use: Avoid vague terminology. Introduce new terms only after defining them precisely.
-- Anchor Concepts to Evidence: For each conceptual element, specify the system artifact(s)—e.g., code modules, design docs, architecture diagrams, or data schemas—that embody or describe that element.
-- Verifiable Reasoning: Any logical flow or algorithm must be represented with verifiable pseudo-code or structured reasoning steps. Each must clearly map to system evidence.
-
-# Final Instructions
-- Generate your output in markdown format.
-- Do not include any other text, greetings, or sign-offs like "Here is the Playbook..." or "Would you like me to..."
+First user instruction: {user_instruction}
 """
 
 
-ADD_CONCEPT_AGENT_PROMPT = """You are an expert Senior Staff Engineer and technical architect. Your primary skill is the ability to analyze complex, multi-modal systems—including code, documentation, configuration files, specifications, and other text-based artifacts—and rapidly synthesize a deep, conceptual understanding of their structure, intent, and logic.
-
-Your task is to analyze a provided system to investigate a specific "Concept". Your output will be consumed by another AI coding agent to perform tasks, so clarity, precision, and verifiability are paramount. The downstream agent has no room for ambiguity.
-
-IMPORTANT:
-There is an existing knowledge base of concepts stored in .socratic/synth-consolidated.json. You can use this to help you understand the existing concepts and how they are related to each other. Your goal is to add one or more knowledge units to this existing knowledge base, by collaborating with the user. As your final output, return the knowledge units you wish to add to the existing knowledge base. Use markdown format, NOT JSON format.
-
-The Concept/topic to research and add to the existing knowledge base: {concept}
-
-# Core Philosophy
-- Do not make up or infer any information. Only derive from the provided documents.
-- Concise, logical, and to the point.
-- Conceptual Focus, Implementation-Aware: Explain why and how at a systems level. Your explanations must be conceptual, but grounded in real evidence: code, documents, or configuration files. Use inline file and line number references to ground your explanations.
-- Define Before Use: Avoid vague terminology. Introduce new terms only after defining them precisely.
-- Anchor Concepts to Evidence: For each conceptual element, specify the system artifact(s)—e.g., code modules, design docs, architecture diagrams, or data schemas—that embody or describe that element.
-- Verifiable Reasoning: Any logical flow or algorithm must be represented with verifiable pseudo-code or structured reasoning steps. Each must clearly map to system evidence.
-
-# Final Instructions
-- Generate your output in markdown format.
-- Do not include any other text, greetings, or sign-offs like "Here is the Playbook..." or "Would you like me to..."
-"""
-
-
-# RESEARCH_AGENT_PROMPT = """You are an expert Senior Staff Engineer and technical architect. Your primary skill is the ability to analyze complex, multi-modal systems—including code, documentation, configuration files, specifications, and other text-based artifacts—and rapidly synthesize a deep, conceptual understanding of their structure, intent, and logic.
-
-# Your task is to analyze a provided system to investigate a specific "Concept". Your output will be consumed by another AI coding agent to perform tasks, so clarity, precision, and verifiability are paramount. The downstream agent has no room for ambiguity.
-
-# The Concept/topic to research: {concept}
-
-# Use markdown and the following format to generate your output:
-# You have the freedom to group and cluster information into high-level headings:
-
-# ## Heading 1
-# Body of heading 1
-
-# ## Heading 2
-# Body of heading 2
-
-# ...
-
-# The length of each heading can vary, but each heading should be a single concept or idea. Similar to how a textbook is organized. Each heading should contain a reasonable amount of information and thus should not be too short. If too short, consider combining it with other headings.
-
-# Use bullet points when appropriate. Don't overuse bullet points for everything. 
-
-
-
-# # Core Philosophy
-# - Do not make up or infer any information. Only derive from the provided documents.
-# - Conceptual Focus, Implementation-Aware: Explain why and how at a systems level. Your explanations must be conceptual, but grounded in real evidence: code, documents, or configuration files. Use inline file and line number references to ground your explanations.
-# - Define Before Use: Avoid vague terminology. Introduce new terms only after defining them precisely.
-# - Anchor Concepts to Evidence: For each conceptual element, specify the system artifact(s)—e.g., code modules, design docs, architecture diagrams, or data schemas—that embody or describe that element.
-# - Verifiable Reasoning: Any logical flow or algorithm must be represented with verifiable pseudo-code or structured reasoning steps. Each must clearly map to system evidence.
-
-# # Final Instructions
-# - Generate your output in markdown format.
-# - Do not include any other text, greetings, or sign-offs like "Here is the Playbook...
-# """
-
-
-RESEARCH_ALL_CONCEPTS_PROMPT = """You are an expert Senior Staff Engineer and technical architect. Your primary skill is the ability to analyze complex, multi-modal systems—including code, documentation, configuration files, specifications, and other text-based artifacts—and rapidly synthesize a deep, conceptual understanding of their structure, intent, and logic.
-
-Your task is to analyze a provided system to investigate multiple key concepts and create a consolidated knowledge base. Your output will be consumed by another AI coding agent to perform tasks, so clarity, precision, and verifiability are paramount. The downstream agent has no room for ambiguity.
-
-By default, focus on high-level concepts and ideas while avoiding low-level details. If the user asks for low-level details, you should adhere to their request.
-
-The Concepts/topics to research: 
-{concepts}
-
-Output formatting:
-- Use markdown and the following format to generate your output.
-- You have the freedom to group and cluster information into high-level headings.
-
-## Heading 1
-Body of heading 1
-
-## Heading 2
-Body of heading 2
-
-...
-
-The length of each heading can vary, but each heading should be a single concept or idea. Similar to how a textbook is organized. Each heading should contain a reasonable amount of information and thus should not be too short. If too short, consider combining it with other headings.
-
-Use bullet points when appropriate. Don't overuse bullet points for everything. 
-
-Research all the provided concepts. You may organize the information in a way that makes sense for the overall system, grouping/reordering related concepts together when appropriate.
-
-# Core Philosophy
-- Do not make up or infer any information. Only derive from the provided documents.
-- Concise, logical, and to the point.
-- Conceptual Focus, Implementation-Aware: Explain why and how at a systems level. Your explanations must be conceptual, but grounded in real evidence: code, documents, or configuration files. Use inline file and line number references to ground your explanations.
-- Define Before Use: Avoid vague terminology. Introduce new terms only after defining them precisely.
-- Anchor Concepts to Evidence: For each conceptual element, specify the system artifact(s)—e.g., code modules, design docs, architecture diagrams, or data schemas—that embody or describe that element.
-
-
-# Final Instructions
-- Generate your output in markdown format.
-- Do not include any other text, greetings, or sign-offs like "Here is the Playbook...
-"""
+def sync_knowledge_base(source_kb_dir: Path, target_kb_dir: Path) -> None:
+    """
+    Synchronize knowledge base by copying source to target.
+    Deletes target directory if it exists, then copies source to target.
+    
+    Args:
+        source_kb_dir: The source knowledge base directory (what the agent produced)
+        target_kb_dir: The target knowledge base directory (to be overwritten)
+    """
+    if os.path.exists(target_kb_dir):
+        shutil.rmtree(target_kb_dir)
+    shutil.copytree(source_kb_dir, target_kb_dir)
 
 
 def build_synth_parser() -> argparse.ArgumentParser:
@@ -222,6 +178,11 @@ def build_synth_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Modify a knowledge unit interactively.",
     )
+    parser.add_argument(
+        "--webui_friendly",
+        action="store_true",
+        help="Simplify output for Web UI consumption (no [INFO]/fancy prints).",
+    )
     # The ID of each knowledge unit is simple a incrementing integer starting at 0
     parser.add_argument(
         "--concept_id",
@@ -231,88 +192,69 @@ def build_synth_parser() -> argparse.ArgumentParser:
     return parser
 
 
-# def research_concept_design(concept: str, model: str, directory: Path) -> tuple[str, str, dict]:
-#     env = os.environ.copy()
-#     env["CODEX_API_KEY"] = os.environ["OPENAI_API_KEY"]
 
-#     instruction = RESEARCH_AGENT_PROMPT.format(concept=concept)
-
-#     command = [
-#         "codex",
-#         "exec",
-#         "--cd",
-#         str(directory.resolve()),
-#         "--model",
-#         model,
-#         "--config",
-#         f"model_reasoning_effort='{GLOBAL_CODEX_REASONING_EFFORT}'",
-#         "--json",
-#         instruction,
-#         # "--output-schema",
-#         # "socratic/synth_output_schema.json"
-#     ]
-
-#     process = subprocess.Popen(
-#         command,
-#         stdout=subprocess.PIPE,
-#         stderr=subprocess.STDOUT,
-#         text=True,
-#         env=env,
-#     )
-
-#     collected_output: list[str] = []
-
-#     assert process.stdout is not None
-#     for raw_line in process.stdout:
-#         collected_output.append(raw_line)
-
-#     return_code = process.wait()
-#     if return_code:
-#         raise subprocess.CalledProcessError(return_code, command)
-
-#     if len(collected_output) < 2:
-#         raise ValueError("Unexpected Codex output: fewer than two lines returned.")
-
-#     second_last_line = collected_output[-2]
-#     resource_usage = collected_output[-1]
-#     usage_dict = json.loads(resource_usage).get("usage", {})
-
-#     try:
-#         payload = json.loads(second_last_line)
-#     except json.JSONDecodeError as error:
-#         raise ValueError("Failed to parse Codex output as JSON.") from error
-
-#     item = payload.get("item")
-#     if not isinstance(item, dict):
-#         raise ValueError("Codex output missing item field.")
-
-#     text = item.get("text")
-#     if not isinstance(text, str):
-#         raise ValueError("Codex output missing item.text field.")
-
-#     collected_output = "\n".join(collected_output)
-#     return text, collected_output, usage_dict
-
-
-def research_all_concepts(concepts: list[str], model: str, directory: Path) -> tuple[str, str, dict]:
+def synthesize(
+    model: str,
+    input_src_docs_dir: Path,
+    project_dir: Path,
+    webui_friendly: bool = False,
+):
     """
     Research all concepts at once using a single Codex agent call.
     Returns the consolidated result for all concepts.
+    input_dir: the directory containing the source files to synthesize.
+               the knowledge base files are stored in input_dir/knowledge_base/.
+               We set the codex agent working directory to input_dir/knowledge_base/ 
+               and grant full write access within that directory so the agent can modify the knowledge base files.
+               We tell the agent in the prompt that the source input files are stored in ../. This is how we ensure the agent has read-only access to the source input files but write access to the knowledge base files.
     """
     # Get LLM provider configuration
     config_options, env_key = get_codex_config_options()
     
     env = os.environ.copy()
 
-    # Format concepts as a numbered list
-    concepts_text = "\n".join(f"{i}. {concept}" for i, concept in enumerate(concepts))
-    instruction = RESEARCH_ALL_CONCEPTS_PROMPT.format(concepts=concepts_text)
+    # Prompt user for synthesis request
+    if webui_friendly:
+        print("What should we work on?")
+        user_instruction = input()
+        print("Agent in progress...")
+    else:
+        user_instruction = prompt_input("What should we work on?")
+        print_status("Agent in progress...")
+
+    # directory that contains the knowledge base files
+    input_src_docs_kb_dir = input_src_docs_dir / "knowledge_base"
+    project_dir_kb_dir = project_dir / "knowledge_base"
+
+    # So we keep two copies of the knowledge base: 
+    # One copy is in the project directory (project_dir/knowledge_base)
+    # - lets call this the "project_dir_kb"
+    # The second copy is in the input source documents directory (input_src_docs_dir/knowledge_base). This is the copy that the codex agent will modify.
+    # - lets call this the "input_src_docs_kb"
+    # - This is also a temporary copy that will be deleted after the synthesis session is complete.
+    # Two copies are needed to track changes the codex agent made to the KB 
+    # and ask for user approval. 
+
+    # Overwrite the input_src_docs_kb with the project_dir_kb
+    # At this point the two KBs should be the same in most cases, except for cases
+    # where the user manually modified the input_src_docs_kb. In that case, we perform 
+    # the copy so the codex agent will see the latest changes.
+
+    # first delete the input_src_docs_kb if it exists
+    if os.path.exists(input_src_docs_kb_dir):
+        shutil.rmtree(input_src_docs_kb_dir)
+
+    shutil.copytree(project_dir_kb_dir, input_src_docs_kb_dir)
+    
+    instruction = SYNTHESIZE_AGENT_PROMPT.format(input_src_docs_dir=input_src_docs_dir, user_instruction=user_instruction)
 
     command = [
         "codex",
         "exec",
         "--cd",
-        str(directory.resolve()),
+        str(input_src_docs_kb_dir.resolve()),
+        "--sandbox",
+        "workspace-write",
         "--model",
         model,
     ]
@@ -337,236 +279,6 @@ def research_all_concepts(concepts: list[str], model: str, directory: Path) -> t
         text=True,
         env=env,
     )
-
-    collected_output: list[str] = []
-
-    assert process.stdout is not None
-    for raw_line in process.stdout:
-        collected_output.append(raw_line)
-
-    return_code = process.wait()
-    if return_code:
-        raise subprocess.CalledProcessError(return_code, command)
-
-    if len(collected_output) < 2:
-        raise ValueError("Unexpected Codex output: fewer than two lines returned.")
-
-    second_last_line = collected_output[-2]
-    resource_usage = collected_output[-1]
-    usage_dict = json.loads(resource_usage).get("usage", {})
-
-    try:
-        payload = json.loads(second_last_line)
-    except json.JSONDecodeError as error:
-        raise ValueError("Failed to parse Codex output as JSON.") from error
-
-    item = payload.get("item")
-    if not isinstance(item, dict):
-        raise ValueError("Codex output missing item field.")
-
-    text = item.get("text")
-    if not isinstance(text, str):
-        raise ValueError("Codex output missing item.text field.")
-
-    collected_output = "\n".join(collected_output)
-    return text, collected_output, usage_dict
-
-
-
-def llm_generate_title(input_text: str) -> str:
-    """
-    Takes the raw text input and generates a title for it.
-    """
-    # Load LLM config to get model, api_base, and provider
-    llm_config = load_llm_config()
-    model = llm_config['model']
-    api_base = llm_config['base_url']
-    provider = llm_config['provider']
-    
-    messages: List[Dict[str, Any]] = [
-        {"role": "system", "content": "Generate a title for the following text."},
-        {"role": "user", "content": f"The input text:\n{input_text}"}
-    ]
-
-    response = litellm.completion(
-        model=model,
-        custom_llm_provider=provider,
-        messages=messages,
-        api_base=api_base
-    )
-
-    # Print token usage
-    if hasattr(response, 'usage') and response.usage:
-        usage = response.usage
-        print(f"[INFO] llm_generate_title token usage: {usage}")
-
-    return response.choices[0].message.content
-
-
-
-def convert_synth_output_to_json(synth_output: str) -> dict:
-    """
-    Takes the raw text output and converts it to JSON following the given schema.
-    """
-    # Load LLM config to get model, api_base, and provider
-    llm_config = load_llm_config()
-    model = llm_config['model']
-    api_base = llm_config['base_url']
-    provider = llm_config['provider']
-    
-    messages: List[Dict[str, Any]] = [
-        {"role": "system", "content": "Convert the following raw text output to JSON following the given schema. Convert text as is, do not change or modify the text. Do not attempt to summarize or paraphrase the given text. Do not add any additional text or comments."},
-        {"role": "user", "content": f"The given text:\n{synth_output}"}
-    ]
-
-    response = litellm.completion(
-        model=model,
-        custom_llm_provider=provider,
-        messages=messages,
-        api_base=api_base,
-        response_format={
-            "type": "json_schema",
-            "json_schema": {
-                "name": "knowledge_units_schema",
-                "schema": knowledge_units_schema,
-            }
-        }
-    )
-
-    # Print token usage
-    if hasattr(response, 'usage') and response.usage:
-        usage = response.usage
-        print(f"[INFO] Token usage: {usage}")
-
-    try:
-        output_json = json.loads(response.choices[0].message.content)
-    except json.JSONDecodeError as error:
-        raise ValueError("Failed to parse Codex output as JSON in convert_synth_output_to_json().") from error
-
-    return output_json
-
-
-def load_consolidated(project_dir: Path) -> dict | None:
-    """
-    Load the consolidated knowledge base JSON if it exists, otherwise return None.
-    """
-    path = project_dir / "synth-consolidated.json"
-    if not path.exists():
-        return None
-    try:
-        text = path.read_text(encoding="utf-8", errors="replace")
-        return json.loads(text)
-    except Exception as error:
-        raise ValueError(f"Failed to read consolidated synth JSON: {path}") from error
-
-
-def save_consolidated(project_dir: Path, data: dict) -> Path:
-    """
-    Save the consolidated knowledge base JSON to synth-consolidated.json.
-    """
-    out_path = project_dir / "synth-consolidated.json"
-    save_as(json.dumps(data, indent=2, ensure_ascii=False), out_path)
-    return out_path
-
-
-def ensure_ids(data: dict) -> dict:
-    """
-    Assign sequential ephemeral IDs to each knowledge unit starting at 1.
-    Existing IDs are overwritten to keep them consistent and simple.
-    """
-    units = data.get("knowledge_units", [])
-    for index, unit in enumerate(units, start=0):
-        if isinstance(unit, dict):
-            unit["id"] = index
-    return data
-
-def modify_concept(args: argparse.Namespace, project_dir: Path, input_dir: Path, model: str) -> None:
-    """Add a new knowledge unit by launching a codex agent to modify synth-consolidated.json."""
-    
-    # Create .socratic directory in input_dir
-    socratic_dir = input_dir / ".socratic"
-    socratic_dir.mkdir(parents=True, exist_ok=True)
-    print_status(f"Created directory: {socratic_dir}")
-    
-    # Copy consolidated file from project_dir to .socratic
-    source_file = project_dir / "synth-consolidated.json"
-    dest_file = socratic_dir / "synth-consolidated.json"
-    
-    if not source_file.exists():
-        raise SystemExit(
-            f"synth-consolidated.json not found in {project_dir}. "
-            "Run 'socratic-cli synth' first to generate it."
-        )
-    
-    shutil.copy(source_file, dest_file)
-    # print_status(f"Copied {source_file} → {dest_file}")
-    
-    # Grab the requested knowledge units from the consolidated file 
-    existing_knowledge_base_file = load_consolidated(project_dir)
-    if existing_knowledge_base_file is None:
-        print_status("No consolidated synth JSON found. Run 'socratic-cli synth' to generate it first.")
-        return
-    
-    existing_knowledge_base_file = ensure_ids(existing_knowledge_base_file)
-
-    existing_knowledge_base = existing_knowledge_base_file.get("knowledge_units", [])
-    # print(f"[DEBUG] existing knowledge base: {existing_knowledge_base}")
-    # requested_knowledge_units = [unit for unit in existing_knowledge_base if unit["id"] == args.concept_id]
-    if args.concept_id < 0 or args.concept_id >= len(existing_knowledge_base):
-        raise SystemExit(f"Invalid concept ID: {args.concept_id}. Use --list_concepts to see valid IDs.")
-    requested_knowledge_units = existing_knowledge_base[args.concept_id]
-
-    # print_status(f"")
-    print_agent_block(f"{requested_knowledge_units['body']}", title=f"Modifying knowledge unit {args.concept_id}: {requested_knowledge_units['heading']}")
-
-    # Prompt user for modification instructions
-    user_requirements = prompt_input("How should we modify this?")
-
-    print_status(f"Agent in progress...")
-
-    knowledge_unit_to_modify = f"## Knowledge Unit {args.concept_id}\n{requested_knowledge_units['body']}"
-    
-    instruction = MODIFY_CONCEPT_AGENT_PROMPT.format(knowledge_unit=knowledge_unit_to_modify, user_requirements=user_requirements)
-
-    # print(f"[DEBUG] modify agent instruction: {instruction}")
-
-    # Launch codex agent
-    # Get LLM provider configuration (storing in modify-specific vars for use in resume commands)
-    config_options_modify, env_key_modify = get_codex_config_options()
-    
-    env = os.environ.copy()
-    
-    # print(f"[DEBUG] modify agent instruction: {instruction}")
-    
-    command = [
-        "codex",
-        "exec",
-        "--cd",
-        str(input_dir.resolve()),
-        "--model",
-        model,
-    ]
-    
-    # Add all config options
-    for config_opt in config_options_modify:
-        command.extend(["--config", config_opt])
-    
-    # Only add reasoning effort for OpenAI reasoning models
-    if "gpt-5" in model or "gpt-5.1" in model:
-        command.extend(["--config", f"model_reasoning_effort='{GLOBAL_CODEX_REASONING_EFFORT}'"])
-    
-    command.extend([
-        "--json",
-        instruction
-    ])
-        
-    process = subprocess.Popen(
-        command,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        env=env,
-    )
     
     collected_output: list[str] = []
     
@@ -592,7 +304,16 @@ def modify_concept(args: argparse.Namespace, project_dir: Path, input_dir: Path,
     text = item.get("text")
     if not isinstance(text, str):
         raise ValueError("Codex output missing item.text field.")
-    print_agent_block(text, title="Agent Draft")
+    if webui_friendly:
+        print(text)
+    else:
+        print_agent_block(text, title="Agent Draft")
+    last_text = text
+
+    # Apply changes immediately after initial agent response (terminal mode only)
+    # In webui_friendly mode, we skip auto-sync and let the web UI handle per-file approval
+    if not webui_friendly:
+        sync_knowledge_base(input_src_docs_kb_dir, project_dir_kb_dir)
 
     # Extract thread_id from the first line
     thread_start_line = collected_output[0]
@@ -605,24 +326,27 @@ def modify_concept(args: argparse.Namespace, project_dir: Path, input_dir: Path,
     else:
         raise ValueError(f"Unexpected Codex output: thread_id not found in the first line: {thread_start_line}")
 
-    # Interactive loop: send user feedback until DONE
-    last_text = text
+    # Interactive loop: send user feedback (exits on Ctrl-C)
     while True:
-        user_feedback = prompt_input("Type feedback (or DONE to finish)")
-        if user_feedback.strip().upper() == "DONE":
-            break
+        if webui_friendly:
+            # print("Type feedback")
+            user_feedback = input()
+        else:
+            user_feedback = prompt_input("")
 
         resume_command = [
             "codex",
             "exec",
             "--cd",
-            str(input_dir.resolve()),
+            str(input_src_docs_kb_dir.resolve()),
+            "--sandbox",
+            "workspace-write",
             "--model",
             model,
         ]
         
         # Add all config options
-        for config_opt in config_options_modify:
+        for config_opt in config_options:
             resume_command.extend(["--config", config_opt])
         
         # Only add reasoning effort for OpenAI reasoning models
@@ -636,7 +360,10 @@ def modify_concept(args: argparse.Namespace, project_dir: Path, input_dir: Path,
             user_feedback,
         ])
 
-        print_status("Continuing agent with your input…")
+        if webui_friendly:
+            print("Continuing agent with your input…")
+        else:
+            print_status("Continuing agent with your input…")
         process2 = subprocess.Popen(
             resume_command,
             stdout=subprocess.PIPE,
@@ -666,273 +393,141 @@ def modify_concept(args: argparse.Namespace, project_dir: Path, input_dir: Path,
             raise ValueError("Codex resume output missing item.text field.")
 
         last_text = text2
-        print_agent_block(text2, title="Agent Update")
+        if webui_friendly:
+            print(text2)
+        else:
+            print_agent_block(text2, title="Agent Update")
 
-    # User issued DONE command, meaning that they are happy with the final output of the agent. So grab that, convert to JSON, and replace the existing knowledge unit with the new one.
-    print_status(f"Done. Replacing the existing knowledge unit with the new one. This may take a few seconds...")
-    # knowledge_unit_to_modify = convert_synth_output_to_json(last_text)
-
-    existing_knowledge_base_file = load_consolidated(project_dir)
-    existing_knowledge_base_file = ensure_ids(existing_knowledge_base_file)
-
-    existing_knowledge_base_file["knowledge_units"][args.concept_id]["body"] = last_text
-
-    existing_knowledge_base_file = ensure_ids(existing_knowledge_base_file)
-
-    save_consolidated(project_dir, existing_knowledge_base_file)
-    print_status(f"Replaced the existing knowledge unit with the new one.")
-    
-    # Clean up temporary file in source file directory
-    dest_file.unlink()
-    # print_status(f"Cleaned up temporary file: {dest_file}")
+        # Apply changes immediately after each agent response (terminal mode only)
+        # In webui_friendly mode, we skip auto-sync and let the web UI handle per-file approval
+        if not webui_friendly:
+            sync_knowledge_base(input_src_docs_kb_dir, project_dir_kb_dir)
 
 
-def add_concept(args: argparse.Namespace, project_dir: Path, input_dir: Path, model: str) -> None:
-    """Add a new knowledge unit by launching a codex agent to modify synth-consolidated.json."""
+def print_directory_diff(source_dir: Path, target_dir: Path) -> None:
+    """
+    Show a colorized recursive diff between two directories.
+    source_dir: the updated directory (what the agent produced)
+    target_dir: the original directory (what we had before)
+    """
+    # ANSI color codes
+    GREEN = '\033[92m'
+    RED = '\033[91m'
+    YELLOW = '\033[93m'
+    BLUE = '\033[94m'
+    RESET = '\033[0m'
+    BOLD = '\033[1m'
     
-    # Create .socratic directory in input_dir
-    socratic_dir = input_dir / ".socratic"
-    socratic_dir.mkdir(parents=True, exist_ok=True)
-    print_status(f"Created directory: {socratic_dir}")
+    print(f"\n{BOLD}=== Knowledge Base Changes ==={RESET}\n")
     
-    # Copy consolidated file from project_dir to .socratic
-    source_file = project_dir / "synth-consolidated.json"
-    dest_file = socratic_dir / "synth-consolidated.json"
+    # Get all files recursively from both directories
+    source_files = set()
+    target_files = set()
     
-    if not source_file.exists():
-        raise SystemExit(
-            f"synth-consolidated.json not found in {project_dir}. "
-            "Run 'socratic-cli synth' first to generate it."
-        )
+    if source_dir.exists():
+        for file_path in source_dir.rglob('*'):
+            if file_path.is_file():
+                rel_path = file_path.relative_to(source_dir)
+                source_files.add(rel_path)
     
-    shutil.copy(source_file, dest_file)
-    print_status(f"Copied {source_file} → {dest_file}")
+    if target_dir.exists():
+        for file_path in target_dir.rglob('*'):
+            if file_path.is_file():
+                rel_path = file_path.relative_to(target_dir)
+                target_files.add(rel_path)
     
-    # Prompt user for concept to add
-    concept = prompt_input("What concept/topic would you like to add to the knowledge base?")
-
-    print_status(f"Agent in progress...")
+    # Find added, deleted, and potentially modified files
+    added_files = sorted(source_files - target_files)
+    deleted_files = sorted(target_files - source_files)
+    common_files = sorted(source_files & target_files)
     
-    # Launch codex agent
-    # Get LLM provider configuration (storing in add-specific vars for use in resume commands)
-    config_options_add, env_key_add = get_codex_config_options()
-    
-    env = os.environ.copy()
-    
-    instruction = ADD_CONCEPT_AGENT_PROMPT.format(concept=concept)
-    
-    command = [
-        "codex",
-        "exec",
-        "--cd",
-        str(input_dir.resolve()),
-        "--model",
-        model,
-    ]
-    
-    # Add all config options
-    for config_opt in config_options_add:
-        command.extend(["--config", config_opt])
-    
-    # Only add reasoning effort for OpenAI reasoning models
-    if "gpt-5" in model or "gpt-5.1" in model:
-        command.extend(["--config", f"model_reasoning_effort='{GLOBAL_CODEX_REASONING_EFFORT}'"])
-    
-    command.extend([
-        "--json",
-        instruction,
-        # "--output-schema",
-        # "knowledge_units_schema.json"
-    ])
-    
-    # print_status(f"Launching codex agent with instruction: {instruction}")
-    
-    process = subprocess.Popen(
-        command,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        env=env,
-    )
-    
-    collected_output: list[str] = []
-    
-    assert process.stdout is not None
-    for raw_line in process.stdout:
-        collected_output.append(raw_line)
-    
-    return_code = process.wait()
-    if return_code:
-        raise subprocess.CalledProcessError(return_code, command)
-    
-    # Parse and display the initial agent message (2nd last line)
-    if len(collected_output) < 2:
-        raise ValueError("Unexpected Codex output: fewer than two lines returned.")
-    second_last_line = collected_output[-2]
-    try:
-        payload = json.loads(second_last_line)
-    except json.JSONDecodeError as error:
-        raise ValueError("Failed to parse Codex output as JSON.") from error
-    item = payload.get("item")
-    if not isinstance(item, dict):
-        raise ValueError("Codex output missing item field.")
-    text = item.get("text")
-    if not isinstance(text, str):
-        raise ValueError("Codex output missing item.text field.")
-    print_agent_block(text, title="Agent Draft")
-
-    # Extract thread_id from the first line
-    thread_start_line = collected_output[0]
-    try:
-        thread_start_obj = json.loads(thread_start_line)
-    except json.JSONDecodeError as error:
-        raise ValueError("Failed to parse Codex thread start line as JSON.") from error
-    if isinstance(thread_start_obj, dict) and thread_start_obj.get("type") == "thread.started" and "thread_id" in thread_start_obj:
-        thread_id = thread_start_obj.get("thread_id")
-    else:
-        raise ValueError(f"Unexpected Codex output: thread_id not found in the first line: {thread_start_line}")
-
-    # Interactive loop: send user feedback until DONE
-    last_text = text
-    while True:
-        user_feedback = prompt_input("Type feedback (or DONE to finish)")
-        if user_feedback.strip().upper() == "DONE":
-            break
-
-        resume_command = [
-            "codex",
-            "exec",
-            "--cd",
-            str(input_dir.resolve()),
-            "--model",
-            model,
-        ]
+    modified_files = []
+    for rel_path in common_files:
+        source_file = source_dir / rel_path
+        target_file = target_dir / rel_path
         
-        # Add all config options
-        for config_opt in config_options_add:
-            resume_command.extend(["--config", config_opt])
+        source_content = source_file.read_text(encoding='utf-8', errors='replace')
+        target_content = target_file.read_text(encoding='utf-8', errors='replace')
         
-        # Only add reasoning effort for OpenAI reasoning models
-        if "gpt-5" in model or "gpt-5.1" in model:
-            resume_command.extend(["--config", f"model_reasoning_effort='{GLOBAL_CODEX_REASONING_EFFORT}'"])
+        if source_content != target_content:
+            modified_files.append(rel_path)
+    
+    # Print summary
+    has_changes = added_files or deleted_files or modified_files
+    
+    if not has_changes:
+        print(f"{BLUE}No changes detected.{RESET}\n")
+        return
+    
+    # Print added files
+    if added_files:
+        print(f"{GREEN}{BOLD}Added files:{RESET}")
+        for file_path in added_files:
+            print(f"{GREEN}  + {file_path}{RESET}")
+        print()
+    
+    # Print deleted files
+    if deleted_files:
+        print(f"{RED}{BOLD}Deleted files:{RESET}")
+        for file_path in deleted_files:
+            print(f"{RED}  - {file_path}{RESET}")
+        print()
+    
+    # Print modified files with diffs
+    if modified_files:
+        print(f"{YELLOW}{BOLD}Modified files:{RESET}")
+        for file_path in modified_files:
+            print(f"{YELLOW}  ~ {file_path}{RESET}")
+        print()
         
-        resume_command.extend([
-            "--json",
-            "resume",
-            thread_id,
-            user_feedback,
-        ])
-
-        print_status("Continuing agent with your input…")
-        process2 = subprocess.Popen(
-            resume_command,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            env=env,
-        )
-        resume_output: list[str] = []
-        assert process2.stdout is not None
-        for raw_line in process2.stdout:
-            resume_output.append(raw_line)
-        return_code2 = process2.wait()
-        if return_code2:
-            raise subprocess.CalledProcessError(return_code2, resume_command)
-        if len(resume_output) < 2:
-            raise ValueError("Unexpected Codex resume output: fewer than two lines returned.")
-        second_last_line2 = resume_output[-2]
-        try:
-            payload2 = json.loads(second_last_line2)
-        except json.JSONDecodeError as error:
-            raise ValueError("Failed to parse Codex resume output as JSON.") from error
-        item2 = payload2.get("item")
-        if not isinstance(item2, dict):
-            raise ValueError("Codex resume output missing item field.")
-        text2 = item2.get("text")
-        if not isinstance(text2, str):
-            raise ValueError("Codex resume output missing item.text field.")
-
-        last_text = text2
-        print_agent_block(text2, title="Agent Update")
-
-    # User issued DONE command, meaning that they are happy with the final output of the agent. So grab that, convert to JSON, and add it to the existing knowledge base.
-    print_status(f"Done. Adding new knowledge unit(s) to the existing knowledge base. This may take a few seconds...")
-
-    new_knowledge_unit_title = llm_generate_title(last_text)
-
-    new_knowledge_unit = {
-        "heading": new_knowledge_unit_title,
-        "body": last_text
-    }
-
-    existing_knowledge_base_file = load_consolidated(project_dir)
-    if existing_knowledge_base_file is None:
-        raise ValueError("No existing knowledge base file found.")
-
-    existing_knowledge_base = existing_knowledge_base_file.get("knowledge_units", [])
-    existing_knowledge_base.append(new_knowledge_unit)
-    existing_knowledge_base_file["knowledge_units"] = existing_knowledge_base
-
-    existing_knowledge_base_file = ensure_ids(existing_knowledge_base_file)
-    save_consolidated(project_dir, existing_knowledge_base_file)
-    print_status(f"Added new knowledge unit(s) to the existing knowledge base.")
-
-    # Clean up temporary file in source file directory
-    dest_file.unlink()
-
-
-def list_concepts(project_dir: Path) -> None:
-    """List all knowledge units from the consolidated knowledge base."""
-    data = load_consolidated(project_dir)
-    if data is None:
-        print_status("No consolidated synth JSON found. Run 'socratic-cli synth' to generate it first.")
-        return
+        # Show detailed diffs for modified files
+        for rel_path in modified_files:
+            source_file = source_dir / rel_path
+            target_file = target_dir / rel_path
+            
+            source_lines = source_file.read_text(encoding='utf-8', errors='replace').splitlines(keepends=True)
+            target_lines = target_file.read_text(encoding='utf-8', errors='replace').splitlines(keepends=True)
+            
+            print(f"{BOLD}--- {rel_path} (before){RESET}")
+            print(f"{BOLD}+++ {rel_path} (after){RESET}")
+            
+            # Generate unified diff with 2 lines of context
+            diff_lines = difflib.unified_diff(
+                target_lines,
+                source_lines,
+                fromfile=str(rel_path),
+                tofile=str(rel_path),
+                lineterm='',
+                n=2  # Show only 2 context lines before and after changes
+            )
+            
+            # Skip the first two lines (file headers) since we already printed them
+            diff_list = list(diff_lines)
+            for line in diff_list[2:]:
+                if line.startswith('+'):
+                    print(f"{GREEN}{line}{RESET}")
+                elif line.startswith('-'):
+                    print(f"{RED}{line}{RESET}")
+                elif line.startswith('@@'):
+                    print(f"{BLUE}{line}{RESET}")
+                else:
+                    print(line)
+            print()
     
-    data = ensure_ids(data)
-    units = data.get("knowledge_units", [])
-    
-    if not units:
-        print_status("Knowledge base is empty.")
-        return
-    
-    print_status("Listing knowledge units (ephemeral IDs):")
-    print("ID | Heading")
-    print("-- | -------")
-    for unit in units:
-        hid = unit.get("id")
-        heading = unit.get("heading", "")
-        print(f"{hid} | {heading}")
-
-
-def delete_concept(args: argparse.Namespace, project_dir: Path) -> None:
-    """Delete a knowledge unit by its ephemeral ID."""
-    data = load_consolidated(project_dir)
-    if data is None:
-        print_status("No consolidated synth JSON found. Run 'socratic-cli synth' to generate it first.")
-        return
-    
-    data = ensure_ids(data)
-    units = data.get("knowledge_units", [])
-    target_id = args.delete_concept
-    
-    if not isinstance(target_id, int) or target_id < 0 or target_id > len(units):
-        print_status(f"Invalid ID: {target_id}. Use --list to see valid IDs.")
-        return
-    
-    # Remove by position (ID is 1-based index)
-    removed = units.pop(target_id)
-    data = ensure_ids(data)
-    save_consolidated(project_dir, data)
-    print_status(f"Deleted knowledge unit ID {target_id}: '{removed.get('heading', '')}'.")
+    # Print summary at the end
+    print(f"{BOLD}Summary: {GREEN}{len(added_files)} added{RESET}, "
+          f"{RED}{len(deleted_files)} deleted{RESET}, "
+          f"{YELLOW}{len(modified_files)} modified{RESET}\n")
 
 def run_synth(args: argparse.Namespace) -> None:
     # Load and print LLM configuration from .env
     try:
         llm_config = load_llm_config()
-        print(f"[INFO] LLM Configuration from .env:")
-        print(f"[INFO]   MODEL: {llm_config['model']}")
-        print(f"[INFO]   BASE_URL: {llm_config['base_url']}")
-        print(f"[INFO]   ENV_KEY: {llm_config['env_key']}")
+        if not args.webui_friendly:
+            print(f"[INFO] LLM Configuration from .env:")
+            print(f"[INFO]   MODEL: {llm_config['model']}")
+            print(f"[INFO]   BASE_URL: {llm_config['base_url']}")
+            print(f"[INFO]   ENV_KEY: {llm_config['env_key']}")
     except SystemExit as e:
         # If .env loading fails, it will exit with appropriate error message
         raise
@@ -955,89 +550,25 @@ def run_synth(args: argparse.Namespace) -> None:
             f"input_dir not found in project configuration for '{args.project}'. "
             "The project may be corrupted or was created with an older version."
         )
-    input_dir = Path(input_dir_str)
+    input_src_docs_dir = Path(input_dir_str)
 
-    # CRUD mode: if any of the CRUD flags are present, skip ingest/synthesis flow.
-    if getattr(args, "list_concepts", False) or args.delete_concept is not None or args.add_concept or args.modify_concept:
-        if args.add_concept:
-            add_concept(args, project_dir, input_dir, model)
-            return
-        if args.modify_concept:
-            if args.concept_id is None:
-                raise SystemExit("--concept_id is required when using --modify_concept.")
-            modify_concept(args, project_dir, input_dir, model)
-            return
-        if getattr(args, "list_concepts", False):
-            list_concepts(project_dir)
-            return
-        if args.delete_concept is not None:
-            delete_concept(args, project_dir)
-            return
+    if not args.webui_friendly:
+        print(f"[INFO] Input source files directory: {input_src_docs_dir}")
 
-        # If we reached here, no actionable CRUD flag was provided
-        print_status("No CRUD action provided. Use --list_concepts, --delete_concept, --add_concept, or --modify_concept.")
-        return
-
-
-    directory = input_dir
-    print(f"[INFO] Working directory: {directory}")
-
-    # Run ingest first to generate concepts.txt
-    print(f"[INFO] Running ingest stage to generate key concepts...")
-    run_ingest(args)
-    
-    # Automatically load concepts.txt from project directory
-    key_concepts_path = project_dir / "concepts.txt"
-    print(f"[INFO] ### Loading key concepts from: {key_concepts_path}")
-    try:
-        text = key_concepts_path.read_text(encoding="utf-8", errors="replace")
-    except Exception as error:
-        raise ValueError(
-            f"Failed to read concepts file: {key_concepts_path}"
-        ) from error
-    key_concepts = [line.strip() for line in text.splitlines() if line.strip()]
-    print(f"[INFO] ### Loaded {len(key_concepts)} key concepts from file.")
-
-    # Single worker: research all concepts at once
-    print_status(f"Synthesizing design for all {len(key_concepts)} concepts...")
-    research_result, _, token_usage = research_all_concepts(
-        key_concepts, model, directory
+    synthesize(
+        model,
+        input_src_docs_dir,
+        project_dir,
+        webui_friendly=args.webui_friendly,
     )
-    print(f"[INFO] Token usage: {token_usage}")
+    # print(f"[INFO] Token usage: {token_usage}")
+
     
-    # Preview first 800 chars to avoid flooding the terminal
-    preview = research_result[:800]
-    if len(research_result) > 800:
-        preview += "\n… (truncated)"
-    print_agent_block(preview, title="Consolidated Research Result Preview")
-    print_status(f"Done synthesizing design for all concepts")
-    
-    # save raw text to file
-    with open(project_dir / "synth-consolidated.txt", "w") as f:
-        f.write(research_result)
-    print_status(f"Saved results to file: {project_dir / 'synth-consolidated.txt'}")
-    
-    # Convert to JSON and save directly to synth-consolidated.json
-    print_status("Converting result to JSON format...")
-    json_result = convert_synth_output_to_json(research_result)
-    
-    # Assign ephemeral IDs
-    json_result = ensure_ids(json_result)
-    
-    # Save consolidated result
-    save_consolidated(project_dir, json_result)
-    print_status(f"Saved consolidated knowledge base → synth-consolidated.json")
 
 
 __all__ = [
     "build_synth_parser",
-    # "research_concept_design",
-    "research_all_concepts",
-    "consolidate",
-    "add_concept",
-    "modify_concept",
-    "list_concepts",
-    "delete_concept",
+    "synthesize",
     "run_synth",
 ]
 

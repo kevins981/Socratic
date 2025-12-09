@@ -1,22 +1,47 @@
-# Socratic: Automated Knowledge Synthesis for Vertical LLM Agents
+# Socratic: KnowledgeOps for Expert-Level Domain Agents
 
-_Transform unstructured domain data into structured, agent-ready knowledge - automatically._
+Socratic is a KnowledgeOps platform that helps teams build expert-level knowledge base for vertical, domain-specific agents.
+You point Socratic at your existing domain docs, and Socratic collaborates with you to build a curated and reliable knowledge base that you actually trust.
+
+Socratic is a **KnowledgeOps platform** that helps teams build *expert-level*, trustworthy knowledge bases for vertical, domain-specific agents.  
+Point Socratic at your existing docs, and collaborate with Socratic to synthesize a **curated, reliable, auditable knowledge base**.
+
+![GitHub commit activity](https://img.shields.io/github/commit-activity/m/kevins981/Socratic)
+![GitHub License](https://img.shields.io/github/license/kevins981/Socratic)
+![Static Badge](https://img.shields.io/badge/model%20support-openai,openrouter,local-orange)
+![GitHub Repo stars](https://img.shields.io/github/stars/kevins981/Socratic)
+
+
+
 
 ## Overview
+High-quality domain knowledge is *critical* for building high-value agents.  
 
-Socratic is a tool that automates **knowledge synthesis for vertical LLM agents** - agents specialized in specific domains.
+Today, most teams rely on "document dump" workflows (e.g., RAG): give the agent all the files and hope it interprets them correctly.  
+But this fails for the same reason it would with a human - you wouldn't onboard a new hire by handing them a folder of docs and saying "good luck."
 
-Socratic ingests sparse, unstructured source documents (docs, code, logs, etc.) and synthesizes them into **compact, structured knowledge bases** ready to plug into agents.
+| Traditional Document Dumps (e.g., RAG)       | Socratic (KnowledgeOps)                     |
+|-----------------------------------------|----------------------------------------------|
+| ❌ "Hope-based" knowledge retrieval       | ✅ Expert-controlled curation                |
+| ❌ Agent misinterprets raw docs          | ✅ Guided, human-in-the-loop knowledge distillation      |
+| ❌ Opaque, “black box” knowledge         | ✅ Clear, auditable knowledge base           |
+| ❌ Hard to detect contradictions         | ✅ Surfaces ambiguities and inconsistencies  |
 
-##  Why Socratic?
 
-Building effective domain agents requires high-quality, domain-specific knowledge. Today, this knowledge is:
+Socratic rethinks how expert knowledge should be distilled. It treats knowledge building like teaching a human expert: capturing tacit rules, resolving ambiguities, surfacing edge cases, and clarifying domain intuitions.
 
-* Manually curated by experts 🧠
-* Costly to maintain 💸
-* Quickly outdated as source documents change ⚠️
+Socratic does this by combining:
+- **Interactive collaboration with the human expert**  
+  Socratic asks high-quality questions, identifies ambiguities, and requests clarification.
+- **Grounded research over your actual domain documents**  
+  It reads your code, specs, and docs to extract accurate conceptual models.
+- **Knowledge as a first-class artifact**  
+  It generates clean, modular, plain-text knowledge units - fully auditable and directly usable by downstream agents.
+- **Human-in-the-loop curation**  
+  Every proposed change can be inspected, diffed, refined, and explicitly approved.
 
-The goal of Socratic is to automate this process, enabling accurate and cost effective domain knowledge management.
+The result is a **structured, trustworthy knowledge base**, not an opaque embedding index  giving you control over what your agent *actually knows*.
+
 
 ## Demo
 Using Socratic to build knowledge base to understand Socratic itself (3-min):
@@ -73,24 +98,11 @@ npm run dev:project -- --project airline_demo
 
 Command line interface:
 ```bash
-# 0. Create project
-socratic-cli create --name airline_demo --input_dir examples/repos/tau_airline 
+# Create project
+socratic-cli create --name airline_demo --input_dir examples/repos/tau_airline
 
-# 1. Synthesis
-# Source documents are stored in examples/repos/tau_airline
+# Start working on your knowledge base!
 socratic-cli synth --project airline_demo
-
-# Add a concept
-socratic-cli synth --project airline_demo --add_concept
-
-# Modify a concept
-socratic-cli synth --project airline_demo --modify_concept --concept_id 1
-
-# Delete a concept
-socratic-cli synth --project airline_demo --delete_concept 1
-
-# 2. Compose agent knowledge prompt
-socratic-cli compose --project airline_demo
 ```
 
 ## Supported Models
@@ -114,31 +126,6 @@ Some models do not work well with Codex due to tool-calling issues. In practice:
 
 In some cases, the model may encouter tool calling problems and therefore fail unexpectedly. E.g., `gpt-oss-120` is known to be unstable. In general, smaller models tend to be more unstable.
 Socratic relies on multi-step reasoning and tool operations, so the model must be sufficiently capable to run the full pipeline reliably.
-
-
-## How It Works
-
-Socratic uses a combination of LLM and LLM agents. Socratic contains 3 stages: ingest, synthesis, and compose. 
-
-### 1. **Ingest**
-
-Given a directory containing documents relevant to the vertical task, Socratic extracts a list of candidate **concepts to research**. This is done collaboratively between the user and a terminal agent. 
-
-* User provides high-level research directions.
-* A terminal agent (codex) quickly scans the source documents to gain context and proposes concepts to research.
-* User further refines and finalizes the list of concepts.
-
-The ingest stage generates the final set of concepts to research (`concepts.txt`).
-
-### 2. **Synthesis**
-
-For each concept to research generated in the ingest stage, Socratic launches a terminal agent (codex) that explores the source documents to synthesize knowledge related to the specific concept. 
-
-For each concept, the synthesis stores the synthesized knowledge in both plain text (`concept{i}-synth.txt`) and JSON format (`concept{i}-synth.json`). 
-
-### 3. **Compose**
-
-Convert synthesized knowledge into prompts that are ready to be dropped directly into your LLM agent’s context.
 
 ## Privacy & Security
 - **Local storage:** All files and outputs are stored entirely on your own machine. Socratic does not upload, transfer, index, or store your data anywhere else.

@@ -3,6 +3,7 @@ import sys
 from .synth import build_synth_parser, run_synth
 from .create import build_create_parser, run_create
 from .compose import build_compose_parser, run_compose
+from .digest import build_digest_parser, run_digest
 
 def build_root_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
@@ -11,7 +12,7 @@ def build_root_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "command",
-        choices=["synth", "create", "compose", "update"],
+        choices=["synth", "create", "compose", "update", "digest"],
         help="Subcommand to run",
     )
     return parser
@@ -44,6 +45,12 @@ def main() -> None:
         sub_parser = build_compose_parser()
         sub_args = sub_parser.parse_args(sys.argv[2:])
         run_compose(sub_args)
+        return
+
+    if command == "digest":
+        sub_parser = build_digest_parser()
+        sub_args = sub_parser.parse_args(sys.argv[2:])
+        run_digest(sub_args)
         return
 
     root_parser.error(f"Unknown command: {command}")

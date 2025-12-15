@@ -12,7 +12,7 @@ from typing import List, Dict, Any
 import litellm
 
 from .constants import *
-from .io_utils import save_as, print_status, print_agent_block, prompt_input, load_project_config
+from .io_utils import save_as, print_status, print_agent_block, prompt_input, load_project_config, extract_agent_message_from_output
 from .llm_config import get_codex_config_options, load_llm_config
 
 SYNTHESIZE_AGENT_PROMPT = """You are an expert Senior Staff Engineer and technical architect. Your primary skill is the ability to analyze complex systems — including code, documentation, configuration files, specifications, and other text-based artifacts — and rapidly synthesize a deep, conceptual understanding of their structure, intent, and logic.
@@ -290,20 +290,8 @@ def synthesize(
     if return_code:
         raise subprocess.CalledProcessError(return_code, command)
     
-    # Parse and display the initial agent message (2nd last line)
-    if len(collected_output) < 2:
-        raise ValueError("Unexpected Codex output: fewer than two lines returned.")
-    second_last_line = collected_output[-2]
-    try:
-        payload = json.loads(second_last_line)
-    except json.JSONDecodeError as error:
-        raise ValueError("Failed to parse Codex output as JSON.") from error
-    item = payload.get("item")
-    if not isinstance(item, dict):
-        raise ValueError("Codex output missing item field.")
-    text = item.get("text")
-    if not isinstance(text, str):
-        raise ValueError("Codex output missing item.text field.")
+    # Parse and display the initial agent message
+    text = extract_agent_message_from_output(collected_output)
     if webui_friendly:
         print(text)
     else:
@@ -378,20 +366,9 @@ def synthesize(
         return_code2 = process2.wait()
         if return_code2:
             raise subprocess.CalledProcessError(return_code2, resume_command)
-        if len(resume_output) < 2:
-            raise ValueError("Unexpected Codex resume output: fewer than two lines returned.")
-        second_last_line2 = resume_output[-2]
-        try:
-            payload2 = json.loads(second_last_line2)
-        except json.JSONDecodeError as error:
-            raise ValueError("Failed to parse Codex resume output as JSON.") from error
-        item2 = payload2.get("item")
-        if not isinstance(item2, dict):
-            raise ValueError("Codex resume output missing item field.")
-        text2 = item2.get("text")
-        if not isinstance(text2, str):
-            raise ValueError("Codex resume output missing item.text field.")
-
+        
+        # Parse and display the resumed agent message
+        text2 = extract_agent_message_from_output(resume_output)
         last_text = text2
         if webui_friendly:
             print(text2)

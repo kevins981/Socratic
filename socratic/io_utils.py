@@ -1,7 +1,43 @@
 from pathlib import Path
+import json
 import shutil
 import textwrap
+from typing import List
+
 import yaml
+
+
+def extract_agent_message_from_output(collected_output: List[str]) -> str:
+    """
+    Extract the agent's message text from Codex output lines.
+    
+    Searches backwards through the output to find a line containing an item
+    with type "agent_message" and a text field.
+    
+    Args:
+        collected_output: List of raw JSON lines from Codex output
+        
+    Returns:
+        The agent's message text
+        
+    Raises:
+        ValueError: If no agent message is found in the output
+    """
+    for line in reversed(collected_output):
+        try:
+            payload = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        
+        item = payload.get("item")
+        if not isinstance(item, dict):
+            continue
+        
+        text = item.get("text")
+        if isinstance(text, str):
+            return text
+    
+    raise ValueError("No agent message found in Codex output. Could not find a line with item.text field.")
 
 
 def load_project_config(project_name: str) -> dict:

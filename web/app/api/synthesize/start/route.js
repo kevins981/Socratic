@@ -10,9 +10,15 @@ export async function POST(req) {
   try {
     const body = await req.json();
     const inputDir = (body?.inputDir || '').trim();
+    const mode = (body?.mode || 'synth').trim();
     
     if (!inputDir) {
       return NextResponse.json({ error: 'Missing inputDir' }, { status: 400 });
+    }
+    
+    // Validate mode parameter
+    if (mode !== 'synth' && mode !== 'digest') {
+      return NextResponse.json({ error: 'Invalid mode. Must be "synth" or "digest"' }, { status: 400 });
     }
 
     const projectName = process.env.PROJECT_NAME || 'Socratic Project';
@@ -22,7 +28,7 @@ export async function POST(req) {
 
     const args = [
       '-u', // Unbuffered output for real-time streaming
-      '-m', 'socratic.cli', 'synth',
+      '-m', 'socratic.cli', mode, // 'synth' or 'digest'
       '--project', projectName,
       '--webui_friendly' // this removes the fancy prints for terminal output
     ];

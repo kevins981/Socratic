@@ -24,6 +24,9 @@ export default function SynthesizePage() {
   const [startingSession, setStartingSession] = useState(false);
   const [userInput, setUserInput] = useState('');
   const [sendingInput, setSendingInput] = useState(false);
+  const [agentMode, setAgentMode] = useState('synth'); // 'synth' | 'digest'
+  const [modeDropdownOpen, setModeDropdownOpen] = useState(false);
+  const [receivedFirstMessage, setReceivedFirstMessage] = useState(false); // For digest mode
   const terminalRef = useRef(null);
   const eventSourceRef = useRef(null);
 
@@ -286,6 +289,7 @@ export default function SynthesizePage() {
     // Clear logs and pending changes for new session
     setLogs([]);
     setPendingChanges({});
+    setReceivedFirstMessage(false);
     
     try {
       // Get project info to get inputDir
@@ -302,7 +306,7 @@ export default function SynthesizePage() {
       const res = await fetch('/api/synthesize/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ inputDir: projectInfo.inputDir })
+        body: JSON.stringify({ inputDir: projectInfo.inputDir, mode: agentMode })
       });
       
       const data = await res.json();
@@ -326,6 +330,8 @@ export default function SynthesizePage() {
           const msg = JSON.parse(event.data);
           if (msg.type === 'log') {
             setLogs((prev) => [...prev, { type: 'agent', content: msg.line }]);
+            // For digest mode, enable input after receiving first agent message
+            setReceivedFirstMessage(true);
             // Check for KB changes after receiving agent messages
             // We debounce this by checking on non-empty lines that aren't status messages
             const line = msg.line.trim();
@@ -362,14 +368,29 @@ export default function SynthesizePage() {
     }
   }
 
-  // Handle new chat session button click
-  function handleNewSession() {
-    startSession();
+  // Handle new chat session button click - reset to initial state for mode selection
+  async function handleNewSession() {
+    // Stop existing session first
+    if (sessionId) {
+      await stopSession();
+    }
+    // Clear logs and reset state to allow mode selection
+    setLogs([]);
+    setPendingChanges({});
+    setReceivedFirstMessage(false);
+    setUserInput('');
+    // sessionId and chatStatus are already reset by stopSession()
   }
 
-  // Send user input to the running process
+  // Send user input to the running process (or start session if none exists)
   async function sendInput() {
-    if (!sessionId || !userInput.trim() || sendingInput) return;
+    // If no session exists, start one (input is disabled, so this is just clicking Start)
+    if (!sessionId) {
+      await startSession();
+      return;
+    }
+    
+    if (!userInput.trim() || sendingInput) return;
     
     const messageText = userInput;
     setSendingInput(true);
@@ -401,7 +422,9 @@ export default function SynthesizePage() {
   function handleInputKeyDown(e) {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      sendInput();
+      if (userInput.trim() || !sessionId) {
+        sendInput();
+      }
     }
   }
 
@@ -677,7 +700,7 @@ export default function SynthesizePage() {
       {/* Right Pane: Agent Chat */}
       <div className="chat-pane">
         <div className="chat-header">
-          <span>Agent</span>
+          <span className="chat-mode-label">{sessionId ? (agentMode === 'synth' ? 'Synth' : 'Digest') : 'Agent'}</span>
           {sessionId && (
             <button
               className="chat-new-session-btn"
@@ -694,17 +717,11 @@ export default function SynthesizePage() {
           )}
         </div>
         <div className="chat-content">
-          {!sessionId && chatStatus === 'idle' ? (
-            <button
-              className="chat-start-btn"
-              onClick={handleNewSession}
-              disabled={startingSession}
-            >
-              {startingSession ? 'Starting...' : 'Start new chat session'}
-            </button>
-          ) : (
-            <div className="chat-terminal" ref={terminalRef}>
-              {logs.map((message, idx) => (
+          <div className="chat-terminal" ref={terminalRef}>
+            {logs.length === 0 && !sessionId ? (
+              <div className="chat-terminal-empty">Select a mode and click Start to begin</div>
+            ) : (
+              logs.map((message, idx) => (
                 message.type === 'user' ? (
                   <div key={idx} className="chat-user-message">
                     <div className="chat-user-bubble">
@@ -714,28 +731,75 @@ export default function SynthesizePage() {
                 ) : (
                   <div key={idx} className="chat-terminal-line">{stripAnsi(message.content)}</div>
                 )
-              ))}
-            </div>
-          )}
+              ))
+            )}
+          </div>
         </div>
-        {sessionId && (
-          <div className="chat-input-area">
-            <input
-              type="text"
-              className="chat-input"
-              value={userInput}
-              onChange={(e) => setUserInput(e.target.value)}
-              onKeyDown={handleInputKeyDown}
-              placeholder="Type your response..."
-              disabled={chatStatus !== 'running' || sendingInput}
-            />
-            <button
-              className="chat-send-btn"
-              onClick={sendInput}
-              disabled={!userInput.trim() || chatStatus !== 'running' || sendingInput}
-            >
-              {sendingInput ? 'Sending...' : 'Send'}
-            </button>
+        <div className="chat-input-area">
+          <input
+            type="text"
+            className="chat-input"
+            value={userInput}
+            onChange={(e) => setUserInput(e.target.value)}
+            onKeyDown={handleInputKeyDown}
+            placeholder={
+              !sessionId 
+                ? 'Click Start to begin...'
+                : (agentMode === 'digest' && !receivedFirstMessage ? 'Waiting for agent...' : 'Type your response...')
+            }
+            disabled={
+              !sessionId ||
+              startingSession || 
+              sendingInput || 
+              chatStatus !== 'running' ||
+              (agentMode === 'digest' && !receivedFirstMessage)
+            }
+          />
+          <button
+            className="chat-send-btn"
+            onClick={sendInput}
+            disabled={
+              startingSession ||
+              sendingInput ||
+              (sessionId && chatStatus !== 'running') ||
+              (sessionId && agentMode === 'digest' && !receivedFirstMessage) ||
+              (sessionId && !userInput.trim())
+            }
+          >
+            {startingSession ? 'Starting...' : sendingInput ? 'Sending...' : (!sessionId ? 'Start' : 'Send')}
+          </button>
+        </div>
+        {/* Mode selector - only show when no session is running */}
+        {!sessionId && (
+          <div className="chat-mode-selector">
+            <div className="mode-dropdown-container">
+              <button
+                className="mode-dropdown-trigger"
+                onClick={() => setModeDropdownOpen(!modeDropdownOpen)}
+              >
+                <span className="mode-dropdown-label">Mode:</span>
+                <span className="mode-dropdown-value">{agentMode === 'synth' ? 'Synth' : 'Digest'}</span>
+                <span className={`mode-dropdown-arrow ${modeDropdownOpen ? 'open' : ''}`}>▾</span>
+              </button>
+              {modeDropdownOpen && (
+                <div className="mode-dropdown-menu">
+                  <button
+                    className={`mode-dropdown-item ${agentMode === 'synth' ? 'active' : ''}`}
+                    onClick={() => { setAgentMode('synth'); setModeDropdownOpen(false); }}
+                  >
+                    <span className="mode-item-name">Synth</span>
+                    <span className="mode-item-desc">User-directed updates</span>
+                  </button>
+                  <button
+                    className={`mode-dropdown-item ${agentMode === 'digest' ? 'active' : ''}`}
+                    onClick={() => { setAgentMode('digest'); setModeDropdownOpen(false); }}
+                  >
+                    <span className="mode-item-name">Digest</span>
+                    <span className="mode-item-desc">Question-first learning</span>
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         )}
       </div>

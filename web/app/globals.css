@@ -368,6 +368,16 @@ body {
   word-break: break-word;
 }
 
+.chat-terminal-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: #666666;
+  font-size: 13px;
+  font-style: italic;
+}
+
 .chat-user-message {
   display: flex;
   justify-content: flex-end;
@@ -440,6 +450,118 @@ body {
   background: #3c3c3c;
   color: #666666;
   cursor: not-allowed;
+}
+
+/* Mode Selector (Dropup) */
+.chat-mode-selector {
+  display: flex;
+  justify-content: flex-start;
+  padding: 8px 16px 12px;
+  background: #2d2d2d;
+  border-top: 1px solid #3c3c3c;
+  flex-shrink: 0;
+}
+
+.mode-dropdown-container {
+  position: relative;
+}
+
+.mode-dropdown-trigger {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: #3c3c3c;
+  color: #cccccc;
+  border: 1px solid #4a4a4a;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.mode-dropdown-trigger:hover {
+  background: #4a4a4a;
+  border-color: #5a5a5a;
+}
+
+.mode-dropdown-label {
+  color: #888888;
+}
+
+.mode-dropdown-value {
+  font-weight: 500;
+  color: #e0e0e0;
+}
+
+.mode-dropdown-arrow {
+  font-size: 10px;
+  color: #888888;
+  transition: transform 0.15s;
+}
+
+.mode-dropdown-arrow.open {
+  transform: rotate(180deg);
+}
+
+.mode-dropdown-menu {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  margin-bottom: 4px;
+  min-width: 180px;
+  background: #2d2d2d;
+  border: 1px solid #4a4a4a;
+  border-radius: 4px;
+  box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.3);
+  overflow: hidden;
+  z-index: 100;
+}
+
+.mode-dropdown-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: 100%;
+  padding: 10px 12px;
+  background: transparent;
+  border: none;
+  color: #cccccc;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.1s;
+  text-align: left;
+}
+
+.mode-dropdown-item:hover {
+  background: #3c3c3c;
+}
+
+.mode-dropdown-item.active {
+  background: #0e639c;
+}
+
+.mode-dropdown-item.active:hover {
+  background: #1177bb;
+}
+
+.mode-item-name {
+  font-weight: 500;
+  margin-bottom: 2px;
+}
+
+.mode-item-desc {
+  font-size: 11px;
+  color: #888888;
+}
+
+.mode-dropdown-item.active .mode-item-desc {
+  color: #b3d9f2;
+}
+
+/* Chat mode label in header */
+.chat-mode-label {
+  flex-shrink: 0;
 }
 
 /* Scrollbar styling */

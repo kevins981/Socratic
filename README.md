@@ -103,6 +103,9 @@ socratic-cli create --name airline_demo --input_dir examples/repos/tau_airline
 
 # Start working on your knowledge base!
 socratic-cli synth --project airline_demo
+
+# Digest model to look deeper into your existing knowledge base
+socratic-cli digest --project airline_demo
 ```
 
 ## Supported Models

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import CodeViewer from '../components/CodeViewer';
 
 export default function SynthesizePage() {
@@ -32,6 +32,7 @@ export default function SynthesizePage() {
   const terminalRef = useRef(null);
   const eventSourceRef = useRef(null);
   const inputRef = useRef(null);
+  const autoResizeTimerRef = useRef(null);
 
   // KB approval state
   const [pendingChanges, setPendingChanges] = useState({}); // { filename: { status, diff, oldContent, newContent } }
@@ -45,7 +46,10 @@ export default function SynthesizePage() {
   }
 
   // Track if content has been modified
-  const hasChanges = selectedFile?.type === 'knowledge' && editedContent !== fileContent;
+  const hasChanges = useMemo(() => 
+    selectedFile?.type === 'knowledge' && editedContent !== fileContent,
+    [selectedFile?.type, editedContent, fileContent]
+  );
 
   // Get the filename from a path
   function getFileName(path) {
@@ -118,8 +122,14 @@ export default function SynthesizePage() {
   }
 
   // Check if selected file has pending changes
-  const selectedFileName = selectedFile ? getFileName(selectedFile.path) : null;
-  const selectedFilePendingChange = selectedFileName ? pendingChanges[selectedFileName] : null;
+  const selectedFileName = useMemo(() => 
+    selectedFile ? getFileName(selectedFile.path) : null,
+    [selectedFile]
+  );
+  const selectedFilePendingChange = useMemo(() => 
+    selectedFileName ? pendingChanges[selectedFileName] : null,
+    [selectedFileName, pendingChanges]
+  );
 
   // Load files on mount
   useEffect(() => {
@@ -387,7 +397,7 @@ export default function SynthesizePage() {
   }
 
   // Send user input to the running process (or start session if none exists)
-  async function sendInput() {
+  const sendInput = useCallback(async () => {
     // If no session exists, start one (input is disabled, so this is just clicking Start)
     if (!sessionId) {
       await startSession();
@@ -420,21 +430,24 @@ export default function SynthesizePage() {
     } finally {
       setSendingInput(false);
     }
-  }
+  }, [sessionId, userInput, sendingInput, startSession]);
 
-  // Auto-resize textarea based on content
-  function autoResizeInput() {
-    const textarea = inputRef.current;
-    if (textarea) {
-      textarea.style.height = 'auto';
-      const lineHeight = 20; // matches CSS line-height
-      const maxHeight = lineHeight * 10; // 10 lines max
-      textarea.style.height = Math.min(textarea.scrollHeight, maxHeight) + 'px';
-    }
-  }
+  // Auto-resize textarea based on content (debounced to prevent layout thrashing)
+  const autoResizeInput = useCallback(() => {
+    clearTimeout(autoResizeTimerRef.current);
+    autoResizeTimerRef.current = setTimeout(() => {
+      const textarea = inputRef.current;
+      if (textarea) {
+        textarea.style.height = 'auto';
+        const lineHeight = 20; // matches CSS line-height
+        const maxHeight = lineHeight * 10; // 10 lines max
+        textarea.style.height = Math.min(textarea.scrollHeight, maxHeight) + 'px';
+      }
+    }, 100);
+  }, []);
 
   // Handle Enter key in input (Shift+Enter for newline, Enter to send)
-  function handleInputKeyDown(e) {
+  const handleInputKeyDown = useCallback((e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       if (userInput.trim() || !sessionId) {
@@ -445,13 +458,13 @@ export default function SynthesizePage() {
         }
       }
     }
-  }
+  }, [userInput, sessionId, sendInput]);
 
   // Handle input change with auto-resize
-  function handleInputChange(e) {
+  const handleInputChange = useCallback((e) => {
     setUserInput(e.target.value);
     autoResizeInput();
-  }
+  }, [autoResizeInput]);
 
   // Accept changes for a file
   async function acceptFile(filename) {
@@ -594,7 +607,7 @@ export default function SynthesizePage() {
       </div>
     );
   }
-  const pendingChangeCount = Object.keys(pendingChanges).length;
+  const pendingChangeCount = useMemo(() => Object.keys(pendingChanges).length, [pendingChanges]);
 
   return (
     <div className="three-pane-container">

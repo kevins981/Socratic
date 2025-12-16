@@ -1,5 +1,6 @@
 "use client";
 
+import { memo } from 'react';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 
@@ -56,7 +57,7 @@ function getLanguageFromFilename(filename) {
   return extensionToLanguage[ext] || 'text';
 }
 
-export default function CodeViewer({ content, filename }) {
+function CodeViewer({ content, filename }) {
   const language = getLanguageFromFilename(filename);
 
   // Custom style overrides to match existing theme
@@ -105,3 +106,6 @@ export default function CodeViewer({ content, filename }) {
     </SyntaxHighlighter>
   );
 }
+
+// Memoize to prevent re-renders when parent state changes but props don't
+export default memo(CodeViewer);

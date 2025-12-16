@@ -12,6 +12,7 @@ export default function SynthesizePage() {
 
   // Viewer state
   const [selectedFile, setSelectedFile] = useState(null); // { path, type: 'source' | 'knowledge' }
+  const [fileRefreshKey, setFileRefreshKey] = useState(0); // Increment to force re-fetch file content
   const [fileContent, setFileContent] = useState('');
   const [editedContent, setEditedContent] = useState('');
   const [loadingContent, setLoadingContent] = useState(false);
@@ -196,7 +197,7 @@ export default function SynthesizePage() {
     }
   }
 
-  // Load file content when a file is selected
+  // Load file content when a file is selected or refreshKey changes
   useEffect(() => {
     if (!selectedFile) {
       setFileContent('');
@@ -217,7 +218,7 @@ export default function SynthesizePage() {
         setEditedContent('[Error loading file]');
       })
       .finally(() => setLoadingContent(false));
-  }, [selectedFile?.path]);
+  }, [selectedFile?.path, fileRefreshKey]);
 
   function selectFile(path, type) {
     // If there are unsaved changes, confirm before switching
@@ -227,6 +228,7 @@ export default function SynthesizePage() {
       }
     }
     setSelectedFile({ path, type });
+    setFileRefreshKey((k) => k + 1); // Force re-fetch file content
   }
 
   async function saveFile() {
@@ -578,13 +580,19 @@ export default function SynthesizePage() {
         <div className="explorer-tabs">
           <button
             className={`explorer-tab ${explorerTab === 'source' ? 'active' : ''}`}
-            onClick={() => setExplorerTab('source')}
+            onClick={() => {
+              setExplorerTab('source');
+              loadFiles();
+            }}
           >
             Source Docs
           </button>
           <button
             className={`explorer-tab ${explorerTab === 'knowledge' ? 'active' : ''}`}
-            onClick={() => setExplorerTab('knowledge')}
+            onClick={() => {
+              setExplorerTab('knowledge');
+              loadFiles();
+            }}
           >
             Knowledge Base
             {pendingChangeCount > 0 && (

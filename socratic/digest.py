@@ -12,7 +12,7 @@ from .io_utils import print_status, print_agent_block, prompt_input, load_projec
 from .llm_config import get_codex_config_options, load_llm_config
 from .synth import sync_knowledge_base
 
-# TODO: placeholder prompt for digest mode
+
 DIGEST_AGENT_PROMPT = """# System Prompt: Question-First Knowledge Base Learning Agent
 
 ## Role
@@ -265,6 +265,33 @@ When you do update the knowledge base:
 * ONLY do what the user explicitly asked.
 * Doigorously prefer asking questions over making assumptions.
 * Do not include references to input source documents inside the knowledge base.
+
+## Special Instruction: Meta-Information Tags
+
+You have access to a special tag, `<meta-info>`, to store context that is not part of the core domain knowledge but is critical for understanding the project.
+The purpose of the meta-info is to capture things like user clarifications.
+This is because the source documents may be inconsistent. E.g. user says "Ah yes section X in file A is outdated".
+Because you cannot modify the source documents, you should record this knowledge in the knowledge base as a meta-info.
+This is so that future agents (including yourself) can read and respect this context.
+
+**1. Reading `<meta-info>`**
+When you read a Knowledge Unit, look for sections wrapped in `<meta-info>...</meta-info>`.
+If a raw source document conflicts with a `<meta-info>` note (e.g., meta-info says a feature described in a source doc is outdated), THE META-INFO TAKES PRECEDENCE OVER THE RAW SOURCE DOCUMENT.
+
+**2. Writing `<meta-info>`**
+If you discover inconsistencies in the source documents, or if the user gives you specific constraints (e.g., "ignore this folder," "this diagram is wrong"), you should record this for future agents.
+* Append or insert a `<meta-info>` block in the relevant Knowledge Unit.
+* Keep the content brief and factual.
+
+**Example Format:**
+# Authentication Service
+
+The service uses OAuth2...
+
+<meta-info>
+* **Source Drift:** `src/legacy_auth.py` is deprecated. Do not use it as evidence.
+* **User Constraint:** The user explicitly stated (Session 3) to prefer `pyjwt` over other libraries.
+</meta-info>
 """
 
 

@@ -88,6 +88,34 @@ body {
   border-bottom: 2px solid #007acc;
 }
 
+.explorer-footer {
+  padding: 8px 12px;
+  border-top: 1px solid #3c3c3c;
+  background: #2d2d2d;
+}
+
+.kb-export-btn {
+  width: 100%;
+  padding: 6px 12px;
+  background: #0e639c;
+  color: #ffffff;
+  border: none;
+  border-radius: 3px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.kb-export-btn:hover {
+  background: #1177bb;
+}
+
+.kb-export-btn:disabled {
+  background: #3c3c3c;
+  color: #606060;
+  cursor: not-allowed;
+}
+
 .explorer-file-list {
   flex: 1;
   overflow-y: auto;

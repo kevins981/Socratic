@@ -39,6 +39,9 @@ export default function SynthesizePage() {
   const [acceptingFile, setAcceptingFile] = useState(null);
   const [rejectingFile, setRejectingFile] = useState(null);
 
+  // Export state
+  const [exporting, setExporting] = useState(false);
+
   // Strip ANSI escape codes from text
   function stripAnsi(text) {
     // eslint-disable-next-line no-control-regex
@@ -534,6 +537,42 @@ export default function SynthesizePage() {
     }
   }
 
+  // Export knowledge base to a single markdown file
+  async function exportKnowledgeBase() {
+    setExporting(true);
+    try {
+      const res = await fetch('/api/kb-export');
+      
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'Export failed');
+      }
+      
+      // Get filename from Content-Disposition header
+      const contentDisposition = res.headers.get('Content-Disposition');
+      let filename = 'knowledge_base.md';
+      if (contentDisposition) {
+        const match = contentDisposition.match(/filename="(.+)"/);
+        if (match) filename = match[1];
+      }
+      
+      // Create blob and trigger download
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      alert('Failed to export knowledge base: ' + err.message);
+    } finally {
+      setExporting(false);
+    }
+  }
+
   // Render diff view
   function renderDiffView(change) {
     if (!change || !change.diff) return null;
@@ -681,6 +720,18 @@ export default function SynthesizePage() {
             ))
           }
         </div>
+        {explorerTab === 'knowledge' && (
+          <div className="explorer-footer">
+            <button
+              className="kb-export-btn"
+              onClick={exportKnowledgeBase}
+              disabled={exporting || knowledgeFiles.length === 0}
+              title={knowledgeFiles.length === 0 ? 'No knowledge base files to export' : 'Export knowledge base as markdown'}
+            >
+              {exporting ? 'Exporting...' : 'Export'}
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Middle Pane: File Viewer */}

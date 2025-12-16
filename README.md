@@ -106,6 +106,9 @@ socratic-cli synth --project airline_demo
 
 # Digest model to look deeper into your existing knowledge base
 socratic-cli digest --project airline_demo
+
+# Export knowledge base (Agent.md)
+socratic-cli export --project airline_demo
 ```
 
 ## Supported Models

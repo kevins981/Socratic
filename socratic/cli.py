@@ -3,6 +3,7 @@ import sys
 from .synth import build_synth_parser, run_synth
 from .create import build_create_parser, run_create
 from .digest import build_digest_parser, run_digest
+from .export import build_export_parser, run_export
 
 def build_root_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
@@ -11,7 +12,7 @@ def build_root_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "command",
-        choices=["synth", "create", "digest"],
+        choices=["synth", "create", "digest", "export"],
         help="Subcommand to run",
     )
     return parser
@@ -44,6 +45,12 @@ def main() -> None:
         sub_parser = build_digest_parser()
         sub_args = sub_parser.parse_args(sys.argv[2:])
         run_digest(sub_args)
+        return
+
+    if command == "export":
+        sub_parser = build_export_parser()
+        sub_args = sub_parser.parse_args(sys.argv[2:])
+        run_export(sub_args)
         return
 
     root_parser.error(f"Unknown command: {command}")

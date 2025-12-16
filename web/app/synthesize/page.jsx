@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef } from 'react';
+import CodeViewer from '../components/CodeViewer';
 
 export default function SynthesizePage() {
   // Explorer state
@@ -711,7 +712,7 @@ export default function SynthesizePage() {
               ) : selectedFilePendingChange ? (
                 renderDiffView(selectedFilePendingChange)
               ) : selectedFile.type === 'source' ? (
-                <pre>{fileContent}</pre>
+                <CodeViewer content={fileContent} filename={selectedFile.path} />
               ) : (
                 <textarea
                   className="viewer-textarea"

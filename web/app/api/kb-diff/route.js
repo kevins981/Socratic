@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
+import * as Diff from 'diff';
 
 export const runtime = 'nodejs';
 
@@ -27,40 +28,45 @@ function parseSimpleYaml(content) {
   return result;
 }
 
-// Compute unified diff between two strings
+// Compute unified diff between two strings using LCS-based algorithm
 function computeUnifiedDiff(oldContent, newContent, filename) {
-  const oldLines = oldContent.split('\n');
-  const newLines = newContent.split('\n');
+  // Use diff library to compute proper line-based diff with LCS algorithm
+  const changes = Diff.diffLines(oldContent, newContent);
   
-  // Simple line-by-line diff
-  const diff = [];
-  const maxLen = Math.max(oldLines.length, newLines.length);
+  const result = [];
+  let oldLineNum = 1;
+  let newLineNum = 1;
   
-  let i = 0, j = 0;
-  while (i < oldLines.length || j < newLines.length) {
-    if (i >= oldLines.length) {
-      // Remaining lines are additions
-      diff.push({ type: 'add', line: newLines[j], lineNum: j + 1 });
-      j++;
-    } else if (j >= newLines.length) {
-      // Remaining lines are deletions
-      diff.push({ type: 'del', line: oldLines[i], lineNum: i + 1 });
-      i++;
-    } else if (oldLines[i] === newLines[j]) {
-      // Lines match - context
-      diff.push({ type: 'ctx', line: oldLines[i], lineNum: j + 1 });
-      i++;
-      j++;
+  for (const change of changes) {
+    const lines = change.value.split('\n');
+    // Remove the last empty line if the value ends with \n
+    if (lines[lines.length - 1] === '') {
+      lines.pop();
+    }
+    
+    if (change.added) {
+      // Lines added in new version
+      for (const line of lines) {
+        result.push({ type: 'add', line, lineNum: newLineNum });
+        newLineNum++;
+      }
+    } else if (change.removed) {
+      // Lines removed from old version
+      for (const line of lines) {
+        result.push({ type: 'del', line, lineNum: oldLineNum });
+        oldLineNum++;
+      }
     } else {
-      // Lines differ - show as delete then add
-      diff.push({ type: 'del', line: oldLines[i], lineNum: i + 1 });
-      diff.push({ type: 'add', line: newLines[j], lineNum: j + 1 });
-      i++;
-      j++;
+      // Unchanged lines (context)
+      for (const line of lines) {
+        result.push({ type: 'ctx', line, lineNum: newLineNum });
+        oldLineNum++;
+        newLineNum++;
+      }
     }
   }
   
-  return diff;
+  return result;
 }
 
 export async function GET() {

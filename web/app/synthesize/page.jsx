@@ -30,6 +30,7 @@ export default function SynthesizePage() {
   const [receivedFirstMessage, setReceivedFirstMessage] = useState(false); // For digest mode
   const terminalRef = useRef(null);
   const eventSourceRef = useRef(null);
+  const inputRef = useRef(null);
 
   // KB approval state
   const [pendingChanges, setPendingChanges] = useState({}); // { filename: { status, diff, oldContent, newContent } }
@@ -420,14 +421,35 @@ export default function SynthesizePage() {
     }
   }
 
-  // Handle Enter key in input
+  // Auto-resize textarea based on content
+  function autoResizeInput() {
+    const textarea = inputRef.current;
+    if (textarea) {
+      textarea.style.height = 'auto';
+      const lineHeight = 20; // matches CSS line-height
+      const maxHeight = lineHeight * 10; // 10 lines max
+      textarea.style.height = Math.min(textarea.scrollHeight, maxHeight) + 'px';
+    }
+  }
+
+  // Handle Enter key in input (Shift+Enter for newline, Enter to send)
   function handleInputKeyDown(e) {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       if (userInput.trim() || !sessionId) {
         sendInput();
+        // Reset textarea height after sending
+        if (inputRef.current) {
+          inputRef.current.style.height = 'auto';
+        }
       }
     }
+  }
+
+  // Handle input change with auto-resize
+  function handleInputChange(e) {
+    setUserInput(e.target.value);
+    autoResizeInput();
   }
 
   // Accept changes for a file
@@ -744,11 +766,11 @@ export default function SynthesizePage() {
           </div>
         </div>
         <div className="chat-input-area">
-          <input
-            type="text"
+          <textarea
+            ref={inputRef}
             className="chat-input"
             value={userInput}
-            onChange={(e) => setUserInput(e.target.value)}
+            onChange={handleInputChange}
             onKeyDown={handleInputKeyDown}
             placeholder={
               !sessionId 
@@ -762,6 +784,7 @@ export default function SynthesizePage() {
               chatStatus !== 'running' ||
               (agentMode === 'digest' && !receivedFirstMessage)
             }
+            rows={1}
           />
           <button
             className="chat-send-btn"

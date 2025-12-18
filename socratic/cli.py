@@ -1,6 +1,7 @@
 import argparse
 import sys
 from .synth import build_synth_parser, run_synth
+from .triage import build_triage_parser, run_triage
 from .create import build_create_parser, run_create
 from .digest import build_digest_parser, run_digest
 from .export import build_export_parser, run_export
@@ -12,7 +13,7 @@ def build_root_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "command",
-        choices=["synth", "create", "digest", "export"],
+        choices=["synth", "triage", "create", "digest", "export"],
         help="Subcommand to run",
     )
     return parser
@@ -33,6 +34,12 @@ def main() -> None:
         sub_parser = build_synth_parser()
         sub_args = sub_parser.parse_args(sys.argv[2:])
         run_synth(sub_args)
+        return
+
+    if command == "triage":
+        sub_parser = build_triage_parser()
+        sub_args = sub_parser.parse_args(sys.argv[2:])
+        run_triage(sub_args)
         return
 
     if command == "create":

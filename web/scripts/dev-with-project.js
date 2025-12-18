@@ -11,6 +11,10 @@ function getProjectName(argv) {
   return 'Socratic Project';
 }
 
+function isTriageMode(argv) {
+  return argv.includes('--triage');
+}
+
 function clearNextCache(webDir) {
   const nextDir = path.join(webDir, '.next');
   if (fs.existsSync(nextDir)) {
@@ -20,6 +24,7 @@ function clearNextCache(webDir) {
 }
 
 const projectName = getProjectName(process.argv.slice(2));
+const triageMode = isTriageMode(process.argv.slice(2));
 const repoRoot = path.resolve(__dirname, '..', '..');
 const projectsDir = path.join(repoRoot, 'projects');
 const projectDir = path.join(projectsDir, projectName);
@@ -39,7 +44,7 @@ fs.mkdirSync(projectDir, { recursive: true });
 // Clear Next.js cache
 clearNextCache(webDir);
 
-console.log(`Starting dev server for project: "${projectName}"`);
+console.log(`Starting dev server for project: "${projectName}"${triageMode ? ' (Triage Mode)' : ''}`);
 console.log(`Project directory: ${projectDir}`);
 
 // Start Next.js dev server with environment variables
@@ -49,7 +54,8 @@ const child = spawn('npm', ['run', 'dev'], {
   env: { 
     ...process.env, 
     PROJECT_NAME: projectName, 
-    PROJECT_ROOT: projectDir 
+    PROJECT_ROOT: projectDir,
+    UI_MODE: triageMode ? 'triage' : 'synthesize'
   }
 });
 

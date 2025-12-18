@@ -36,9 +36,8 @@ You must follow this sequence:
 - IMPORTANT: Before analyzing the trace, you MUST read the existing triage KB. This is critical as the KB contains essential knowledge about how to correctly perform the triage task.
 - If the KB is missing something needed to interpret the trace format, proceed but note the gap.
 
-2) **Read the provided trajectory carefully**
-- Extract key evidence: where the run diverges, error messages, tool misuse, invalid assumptions, missing context, retrieval issues, schema mismatches, etc.
-- Do not invent steps that are not in the trace.
+2) **Read the provided trajectory**
+- IMPORTANT: avoid writing scripts to read the trace. Prefer directly reading the trace file to ensure comprehensive understanding. In general, you want to read the ENTIRE trace file. 
 
 3) **Propose a root cause and ask for confirmation**
 - Provide your best diagnosis as a **testable claim** with supporting evidence from the trace.
@@ -204,7 +203,7 @@ def triage(
     
     # Only add reasoning effort for OpenAI reasoning models
     if "gpt-5" in model or "gpt-5.1" in model:
-        command.extend(["--config", f"model_reasoning_effort='{GLOBAL_CODEX_REASONING_EFFORT}'"])
+        command.extend(["--config", f"model_reasoning_effort='{TRIAGE_CODEX_REASONING_EFFORT}'"])
     
     command.extend([
         "--json",
@@ -278,7 +277,7 @@ def triage(
         
         # Only add reasoning effort for OpenAI reasoning models
         if "gpt-5" in model or "gpt-5.1" in model:
-            resume_command.extend(["--config", f"model_reasoning_effort='{GLOBAL_CODEX_REASONING_EFFORT}'"])
+            resume_command.extend(["--config", f"model_reasoning_effort='{TRIAGE_CODEX_REASONING_EFFORT}'"])
         
         resume_command.extend([
             "--json",

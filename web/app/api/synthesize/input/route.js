@@ -16,7 +16,9 @@ export async function POST(req) {
       return NextResponse.json({ error: 'Invalid session' }, { status: 404 });
     }
     try {
-      sess.child.stdin.write(String(text) + '\n');
+      // Replace newlines with literal \n string to prevent input() from triggering on each line
+      const escapedText = String(text).replace(/\n/g, '\\n');
+      sess.child.stdin.write(escapedText + '\n');
     } catch (err) {
       return NextResponse.json({ error: err?.message || 'Failed to write to process' }, { status: 500 });
     }

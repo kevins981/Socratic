@@ -178,43 +178,9 @@ def build_synth_parser() -> argparse.ArgumentParser:
         help="Project name; must match a folder under projects/",
     )
     parser.add_argument(
-        "-n",
-        "--workers",
-        type=int,
-        default=4,
-        help="Maximum number of concurrent workers to use.",
-    )
-    # CRUD and utility flags
-    parser.add_argument(
-        "--list_concepts",
-        action="store_true",
-        help="List knowledge units with ephemeral IDs from synth-consolidated.json.",
-    )
-    parser.add_argument(
-        "--delete_concept",
-        type=int,
-        help="Delete a knowledge unit by its ephemeral ID.",
-    )
-    parser.add_argument(
-        "--add_concept",
-        action="store_true",
-        help="Add a knowledge unit interactively.",
-    )
-    parser.add_argument(
-        "--modify_concept",
-        action="store_true",
-        help="Modify a knowledge unit interactively.",
-    )
-    parser.add_argument(
         "--webui_friendly",
         action="store_true",
         help="Simplify output for Web UI consumption (no [INFO]/fancy prints).",
-    )
-    # The ID of each knowledge unit is simple a incrementing integer starting at 0
-    parser.add_argument(
-        "--concept_id",
-        type=int,
-        help="Target knowledge unit ID for --modify-concept.",
     )
     return parser
 

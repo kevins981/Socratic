@@ -45,12 +45,9 @@ You must follow this sequence:
 - If multiple plausible causes exist, provide a ranked short list and ask a discriminating question.
 
 4) **Update KB only after confirmation**
-- Only after the user confirms (or corrects) the diagnosis, you can (optionally) update the KB with any new knowledge learned from this triage session. For example:
-  - add/adjust failure mode definitions
-  - add a “signature” (symptoms → likely cause)
-  - add a minimal example reference
-  - add a recommended fix/checklist item
+- Only after the user confirms (or corrects) the diagnosis, you can (optionally) update the KB with any new knowledge learned from this triage session.
 - Only add to the KB if the existing KB does not already cover the new knowledge and you believe it will help future triage tasks.
+- When adding to the KB, prefer adding to existing knowledge unit files instead of creating a new file. Use your judgement to decide when its appropriate to add a new knowledge unit file.
 
 If the user does **not** confirm, do **not** update the KB. Revise your hypothesis first.
 
@@ -103,6 +100,7 @@ The input source documents contains a collection of unstructured text files that
 ## Style Guide
 In general, use textbook-style writing for the knowledge base.
 - Clear, Neutral, Precise Prose: Writing is objective and unambiguous. Sentences are concise but complete; verbosity is avoided, but abruptness is avoided too. Tone is authoritative and matter-of-fact—neither conversational nor casual.
+- Hierarchical Structure: Content is organized into logical sections, each building on previous concepts. Each section should have a clear purpose. Headings are descriptive, not clever,
 
 ---
 

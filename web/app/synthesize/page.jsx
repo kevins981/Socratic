@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
+import ReactMarkdown from 'react-markdown';
 import CodeViewer from '../components/CodeViewer';
 
 export default function SynthesizePage() {
@@ -824,7 +825,15 @@ export default function SynthesizePage() {
                     </div>
                   </div>
                 ) : (
-                  <div key={idx} className="chat-terminal-line">{stripAnsi(message.content)}</div>
+                  <div key={idx} className="chat-terminal-line chat-markdown">
+                    <ReactMarkdown
+                      components={{
+                        a: ({ node, ...props }) => <a {...props} target="_blank" rel="noopener noreferrer" />
+                      }}
+                    >
+                      {stripAnsi(message.content)}
+                    </ReactMarkdown>
+                  </div>
                 )
               ))
             )}

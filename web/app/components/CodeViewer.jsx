@@ -70,11 +70,17 @@ function CodeViewer({ content, filename }) {
       background: '#1e1e1e',
       fontSize: '13px',
       lineHeight: '1.5',
+      whiteSpace: 'pre-wrap',
+      wordBreak: 'normal',
+      overflowWrap: 'anywhere',
     },
     'code[class*="language-"]': {
       ...vscDarkPlus['code[class*="language-"]'],
       fontSize: '13px',
       lineHeight: '1.5',
+      whiteSpace: 'pre-wrap',
+      wordBreak: 'normal',
+      overflowWrap: 'anywhere',
     },
   };
 
@@ -84,15 +90,26 @@ function CodeViewer({ content, filename }) {
       style={customStyle}
       showLineNumbers={true}
       wrapLines={true}
-      wrapLongLines={true}
+      wrapLongLines={false}
+      lineProps={{
+        style: {
+          display: 'block',
+          position: 'relative',
+          paddingLeft: '5em',
+        },
+      }}
       lineNumberStyle={{
+        position: 'absolute',
+        left: 0,
+        top: 0,
         minWidth: '3em',
+        width: '3.5em',
         paddingRight: '1em',
         color: '#6e7681',
         textAlign: 'right',
         userSelect: 'none',
         borderRight: '1px solid #3c3c3c',
-        marginRight: '1em',
+        height: '100%',
       }}
       customStyle={{
         margin: 0,

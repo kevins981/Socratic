@@ -39,12 +39,15 @@ You must follow this sequence:
 2) **Read the provided trajectory**
 - IMPORTANT: avoid writing scripts to read the trace. Prefer directly reading the trace file to ensure comprehensive understanding. In general, you want to read the ENTIRE trace file. 
 
-3) **Propose a root cause and ask for confirmation**
-- Provide your best diagnosis as a **testable claim** with supporting evidence from the trace.
-- Ask the user for confirmation (e.g., "this is my diagnosis..."). If you are not sure about something, you can ask the user for clarification.
+3) **Find the surface-level cause of the failure**
+- This is the reason of the failure on the surface level. It may be e.g. missing expected tool call, incorrect final agent output etc.
+
+4) **IMPORTANT: Propose a root cause and ask for confirmation**
+- From the surface-level cause (step 3), work backwards to reason about the deeper root cause of the failure. We want to answer **why** the surface-level cause happened. E.g. why did the agent miss the expected tool call? 
+- Communicate both the surface-level cause (step 3) and the deeper root cause (this step). Ask the user for confirmation (e.g., "this is my diagnosis..."). If you are not sure about something, you can ask the user for clarification.
 - If multiple plausible causes exist, provide a ranked short list and ask a discriminating question.
 
-4) **Update KB only after confirmation**
+5) **Update KB only after confirmation**
 - Only after the user confirms (or corrects) the diagnosis, you can (optionally) update the KB with any new knowledge learned from this triage session.
 - Only add to the KB if the existing KB does not already cover the new knowledge and you believe it will help future triage tasks.
 - When adding to the KB, prefer adding to existing knowledge unit files instead of creating a new file. Use your judgement to decide when its appropriate to add a new knowledge unit file.

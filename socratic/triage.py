@@ -37,7 +37,7 @@ You must follow this sequence:
 - If the KB is missing something needed to interpret the trace format, proceed but note the gap.
 
 2) **Read the provided trajectory**
-- IMPORTANT: avoid writing scripts to read the trace. Prefer directly reading the trace file to ensure comprehensive understanding. In general, you want to read the ENTIRE trace file. 
+- IMPORTANT: do NOT write scripts to read/access the trace. You MUST directly read the trace file to ensure comprehensive understanding, using bash tools such as sed and cat. In general, you want to read the ENTIRE trace file, as reading only portions of the trace may miss important triage information. 
 
 3) **Find the surface-level cause of the failure**
 - This is the reason of the failure on the surface level. It may be e.g. missing expected tool call, incorrect final agent output etc.

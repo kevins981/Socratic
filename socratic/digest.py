@@ -9,7 +9,7 @@ from pathlib import Path
 
 from .constants import *
 from .io_utils import print_status, print_agent_block, prompt_input, load_project_config, extract_agent_message_from_output
-from .llm_config import get_codex_config_options, load_llm_config
+from .llm_config import get_llm_configs
 from .synth import sync_knowledge_base
 
 
@@ -317,6 +317,7 @@ def build_digest_parser() -> argparse.ArgumentParser:
 
 def digest(
     model: str,
+    codex_config_options: list,
     input_src_docs_dir: Path,
     project_dir: Path,
     webui_friendly: bool = False,
@@ -328,8 +329,6 @@ def digest(
     The agent configuration and Codex command are identical to synthesize(),
     but uses DIGEST_AGENT_PROMPT instead of SYNTHESIZE_AGENT_PROMPT.
     """
-    # Get LLM provider configuration
-    config_options = get_codex_config_options()
     
     env = os.environ.copy()
 
@@ -364,7 +363,7 @@ def digest(
     ]
     
     # Add all config options
-    for config_opt in config_options:
+    for config_opt in codex_config_options:
         command.extend(["--config", config_opt])
     
     # Only add reasoning effort for OpenAI reasoning models
@@ -481,9 +480,9 @@ def digest(
 
 
 def run_digest(args: argparse.Namespace) -> None:
-    # Load and print LLM configuration from .env
+    # Load LLM configuration from .env (once)
     try:
-        llm_config = load_llm_config()
+        llm_config, codex_config_options = get_llm_configs()
         if not args.webui_friendly:
             if llm_config['provider'] == 'chatgpt':
                 print(f"[INFO] You are using Socratic with Codex through a ChatGPT account.")
@@ -500,7 +499,6 @@ def run_digest(args: argparse.Namespace) -> None:
     except SystemExit as e:
         # If .env loading fails, it will exit with appropriate error message
         raise e
-    
     
     # Extract model from config
     model = llm_config['model']
@@ -527,6 +525,7 @@ def run_digest(args: argparse.Namespace) -> None:
 
     digest(
         model,
+        codex_config_options,
         input_src_docs_dir,
         project_dir,
         webui_friendly=args.webui_friendly,

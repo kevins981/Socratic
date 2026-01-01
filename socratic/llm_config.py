@@ -7,7 +7,7 @@ import os
 from pathlib import Path
 
 
-def load_llm_config():
+def _load_llm_config():
     """
     Load LLM provider configuration from .env file in project root.
     
@@ -102,24 +102,25 @@ def load_llm_config():
     }
 
 
-def get_codex_config_options():
+def _build_codex_config_options(config):
     """
-    Generate codex -c config options from .env configuration.
+    Generate codex -c config options from the provided configuration.
     
-    For ChatGPT mode (PROVIDER=chatgpt), returns an empty list since no
+    For ChatGPT mode (provider=chatgpt), returns an empty list since no
     custom config options are needed.
     
     For API-based mode, returns config options for custom provider setup.
+    
+    Args:
+        config: Configuration dictionary from _load_llm_config()
     
     Returns:
         list: List of strings to pass as --config/-c options to codex
               Empty list for ChatGPT mode
             
     Raises:
-        SystemExit: If .env file is missing, variables are not set, or API key is not in environment
+        SystemExit: If API key is not in environment (for API-based mode)
     """
-    config = load_llm_config()
-    
     provider = config['provider']
     
     # For ChatGPT mode, no config options needed
@@ -127,7 +128,6 @@ def get_codex_config_options():
         return []
     
     # For API-based mode, build config options
-    model = config['model']
     base_url = config['base_url']
     env_key = config['env_key']
     
@@ -155,3 +155,24 @@ def get_codex_config_options():
     
     return config_options
 
+
+def get_llm_configs():
+    """
+    Load LLM configuration and build codex config options in one call.
+    
+    This is the main entry point for getting all LLM-related configuration.
+    It loads the .env file once and returns both the config dict and the
+    codex command-line options.
+    
+    Returns:
+        tuple: (llm_config, config_options)
+            - llm_config: dict with keys 'model', 'base_url', 'env_key', 'provider'
+            - config_options: list of strings for codex --config options
+            
+    Raises:
+        SystemExit: If .env file is missing, required variables are not set,
+                    or API key is not in environment
+    """
+    config = _load_llm_config()
+    options = _build_codex_config_options(config)
+    return config, options

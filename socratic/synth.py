@@ -13,7 +13,7 @@ import litellm
 
 from .constants import *
 from .io_utils import save_as, print_status, print_agent_block, prompt_input, load_project_config, extract_agent_message_from_output
-from .llm_config import get_codex_config_options, load_llm_config
+from .llm_config import get_llm_configs
 
 SYNTHESIZE_AGENT_PROMPT = """You are an expert Senior Staff Engineer and technical architect. Your primary skill is the ability to analyze complex systems — including code, documentation, configuration files, specifications, and other text-based artifacts — and rapidly synthesize a deep, conceptual understanding of their structure, intent, and logic.
 
@@ -172,6 +172,7 @@ def build_synth_parser() -> argparse.ArgumentParser:
 
 def synthesize(
     model: str,
+    codex_config_options: list,
     input_src_docs_dir: Path,
     project_dir: Path,
     webui_friendly: bool = False,
@@ -185,8 +186,6 @@ def synthesize(
                and grant full write access within that directory so the agent can modify the knowledge base files.
                We tell the agent in the prompt that the source input files are stored in ../. This is how we ensure the agent has read-only access to the source input files but write access to the knowledge base files.
     """
-    # Get LLM provider configuration
-    config_options = get_codex_config_options()
     
     env = os.environ.copy()
 
@@ -237,7 +236,7 @@ def synthesize(
     ]
     
     # Add all config options
-    for config_opt in config_options:
+    for config_opt in codex_config_options:
         command.extend(["--config", config_opt])
     
     # Only add reasoning effort for OpenAI reasoning models
@@ -474,9 +473,9 @@ def print_directory_diff(source_dir: Path, target_dir: Path) -> None:
           f"{YELLOW}{len(modified_files)} modified{RESET}\n")
 
 def run_synth(args: argparse.Namespace) -> None:
-    # Load and print LLM configuration from .env
+    # Load LLM configuration from .env (once)
     try:
-        llm_config = load_llm_config()
+        llm_config, codex_config_options = get_llm_configs()
         if not args.webui_friendly:
             print(f"[INFO] LLM Configuration from .env:")
             print(f"[INFO]   MODEL: {llm_config['model']}")
@@ -514,6 +513,7 @@ def run_synth(args: argparse.Namespace) -> None:
 
     synthesize(
         model,
+        codex_config_options,
         input_src_docs_dir,
         project_dir,
         webui_friendly=args.webui_friendly,

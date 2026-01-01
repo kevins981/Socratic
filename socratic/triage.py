@@ -13,7 +13,7 @@ import litellm
 
 from .constants import *
 from .io_utils import save_as, print_status, print_agent_block, prompt_input, load_project_config, extract_agent_message_from_output
-from .llm_config import get_codex_config_options, load_llm_config
+from .llm_config import get_llm_configs
 
 TRIAGE_AGENT_PROMPT = """You are **Socratic Triage**, an assistant whose job is to (1) **localize failures in target-agent trajectories** and (2) **learn triage knowledge from the user** into a persistent knowledge base (KB).
 
@@ -155,6 +155,7 @@ def build_triage_parser() -> argparse.ArgumentParser:
 
 def triage(
     model: str,
+    codex_config_options: list,
     input_src_docs_dir: Path,
     project_dir: Path,
     webui_friendly: bool = False,
@@ -168,8 +169,6 @@ def triage(
                and grant full write access within that directory so the agent can modify the knowledge base files.
                We tell the agent in the prompt that the source input files are stored in ../. This is how we ensure the agent has read-only access to the source input files but write access to the knowledge base files.
     """
-    # Get LLM provider configuration
-    config_options = get_codex_config_options()
     
     env = os.environ.copy()
 
@@ -443,9 +442,9 @@ def print_directory_diff(source_dir: Path, target_dir: Path) -> None:
           f"{YELLOW}{len(modified_files)} modified{RESET}\n")
 
 def run_triage(args: argparse.Namespace) -> None:
-    # Load and print LLM configuration from .env
+    # Load LLM configuration from .env (once)
     try:
-        llm_config = load_llm_config()
+        llm_config, codex_config_options = get_llm_configs()
         if not args.webui_friendly:
             if llm_config['provider'] == 'chatgpt':
                 print(f"[INFO] You are using Socratic with Codex through a ChatGPT account.")
@@ -488,6 +487,7 @@ def run_triage(args: argparse.Namespace) -> None:
 
     triage(
         model,
+        codex_config_options,
         input_src_docs_dir,
         project_dir,
         webui_friendly=args.webui_friendly,

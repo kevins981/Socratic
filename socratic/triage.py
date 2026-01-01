@@ -107,10 +107,10 @@ In general, use textbook-style writing for the knowledge base.
 
 ---
 
-## Other
+## Dealing with Output Truncations
 - The terminal tools you control has a limit on the total number of bytes you can read with a single command. If the tool output is too long, the output will be truncated. This is NOT GOOD as you may miss important information. 
-- When truncation occurs, you will see "X chars truncated" somewhere in the middle of the text output.
-- To avoid this, it is HIGHLY recommended to 1) read files in smaller chunks, especially for files with long lines. Reading at most 200 lines at a time is a good rule of thumb. 2) when you see truncation, try to get the missing information that are truncated.
+- When truncation occurs, you will see "X chars truncated" somewhere in the middle of the text output. You MUST identify this. If this happens, you MUST figure out a way to read the full file before proceeding.
+- To avoid this, it is HIGHLY recommended to 1) read files in smaller chunks, especially for files with long lines. Reading at most 100 lines at a time is a good rule of thumb. 2) when you see truncation, you MUST get the missing information that are truncated by reducing the number of lines you read.
 
 ---
 

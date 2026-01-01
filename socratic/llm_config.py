@@ -11,12 +11,16 @@ def load_llm_config():
     """
     Load LLM provider configuration from .env file in project root.
     
+    Supports two modes:
+    1. API-based: Requires MODEL, BASE_URL, ENV_KEY, PROVIDER. This is when using user's own API key, including OpenAI API.
+    2. ChatGPT-based: Requires only MODEL and PROVIDER=chatgpt. This is to support using Codex through a ChatGPT account.
+    
     Returns:
         dict: Configuration dictionary with keys:
             - model: The model name
-            - base_url: The API base URL
-            - env_key: The environment variable name for the API key
-            - provider: The custom LLM provider name
+            - base_url: The API base URL (None for ChatGPT mode)
+            - env_key: The environment variable name for the API key (None for ChatGPT mode)
+            - provider: The provider name
             
     Raises:
         SystemExit: If .env file is missing or required variables are not set
@@ -26,11 +30,15 @@ def load_llm_config():
     if not env_file.exists():
         raise SystemExit(
             "Error: .env file not found in project root.\n"
-            "Please create a .env file with the following variables:\n"
+            "Please create a .env file with one of the following configurations:\n\n"
+            "For API-based access:\n"
             "  MODEL=<model_name>\n"
             "  BASE_URL=<api_base_url>\n"
             "  ENV_KEY=<api_key_env_var_name>\n"
-            "  PROVIDER=<custom_llm_provider_name>"
+            "  PROVIDER=<provider_name>\n\n"
+            "For ChatGPT-based access:\n"
+            "  MODEL=<model_name>\n"
+            "  PROVIDER=chatgpt"
         )
     
     # Read .env file
@@ -46,8 +54,8 @@ def load_llm_config():
                 key, value = line.split('=', 1)
                 config[key.strip()] = value.strip()
     
-    # Validate required variables
-    required_vars = ['MODEL', 'BASE_URL', 'ENV_KEY', 'PROVIDER']
+    # Validate MODEL and PROVIDER are always required
+    required_vars = ['MODEL', 'PROVIDER']
     missing_vars = [var for var in required_vars if var not in config]
     
     if missing_vars:
@@ -55,16 +63,42 @@ def load_llm_config():
             f"Error: Missing required variables in .env file: {', '.join(missing_vars)}\n"
             "Please ensure your .env file contains:\n"
             "  MODEL=<model_name>\n"
+            "  PROVIDER=<provider_name>"
+        )
+    
+    provider = config['PROVIDER']
+    
+    # For ChatGPT mode, only MODEL and PROVIDER are required
+    if provider == 'chatgpt':
+        return {
+            'model': config['MODEL'],
+            'base_url': None,
+            'env_key': None,
+            'provider': provider
+        }
+    
+    # For API-based mode, BASE_URL and ENV_KEY are also required
+    api_required_vars = ['BASE_URL', 'ENV_KEY']
+    missing_api_vars = [var for var in api_required_vars if var not in config]
+    
+    if missing_api_vars:
+        raise SystemExit(
+            f"Error: Missing required variables for API-based mode in .env file: {', '.join(missing_api_vars)}\n"
+            "For API-based access, please ensure your .env file contains:\n"
+            "  MODEL=<model_name>\n"
             "  BASE_URL=<api_base_url>\n"
             "  ENV_KEY=<api_key_env_var_name>\n"
-            "  PROVIDER=<custom_llm_provider_name>"
+            "  PROVIDER=<provider_name>\n\n"
+            "Or use ChatGPT mode with:\n"
+            "  MODEL=<model_name>\n"
+            "  PROVIDER=chatgpt"
         )
     
     return {
         'model': config['MODEL'],
         'base_url': config['BASE_URL'],
         'env_key': config['ENV_KEY'],
-        'provider': config['PROVIDER']
+        'provider': provider
     }
 
 
@@ -72,16 +106,27 @@ def get_codex_config_options():
     """
     Generate codex -c config options from .env configuration.
     
+    For ChatGPT mode (PROVIDER=chatgpt), returns an empty list since no
+    custom config options are needed.
+    
+    For API-based mode, returns config options for custom provider setup.
+    
     Returns:
-        tuple: (config_options, env_key) where:
-            - config_options: List of strings to pass as --config/-c options to codex
-            - env_key: Environment variable name containing the API key
+        list: List of strings to pass as --config/-c options to codex
+              Empty list for ChatGPT mode
             
     Raises:
         SystemExit: If .env file is missing, variables are not set, or API key is not in environment
     """
     config = load_llm_config()
     
+    provider = config['provider']
+    
+    # For ChatGPT mode, no config options needed
+    if provider == 'chatgpt':
+        return []
+    
+    # For API-based mode, build config options
     model = config['model']
     base_url = config['base_url']
     env_key = config['env_key']
@@ -108,5 +153,5 @@ def get_codex_config_options():
     if is_openai:
         config_options.append('model_providers.temp_provider.wire_api="responses"')
     
-    return config_options, env_key
+    return config_options
 

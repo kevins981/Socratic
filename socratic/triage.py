@@ -169,7 +169,7 @@ def triage(
                We tell the agent in the prompt that the source input files are stored in ../. This is how we ensure the agent has read-only access to the source input files but write access to the knowledge base files.
     """
     # Get LLM provider configuration
-    config_options, env_key = get_codex_config_options()
+    config_options = get_codex_config_options()
     
     env = os.environ.copy()
 
@@ -447,13 +447,21 @@ def run_triage(args: argparse.Namespace) -> None:
     try:
         llm_config = load_llm_config()
         if not args.webui_friendly:
-            print(f"[INFO] LLM Configuration from .env:")
-            print(f"[INFO]   MODEL: {llm_config['model']}")
-            print(f"[INFO]   BASE_URL: {llm_config['base_url']}")
-            print(f"[INFO]   ENV_KEY: {llm_config['env_key']}")
+            if llm_config['provider'] == 'chatgpt':
+                print(f"[INFO] You are using Socratic with Codex through a ChatGPT account.")
+                print(f"[INFO] LLM Configuration from .env:")
+                print(f"[INFO]   MODEL: {llm_config['model']}")
+            else:
+                # User brings own API key
+                print(f"[INFO] You are using Socratic through your own API key.")
+                print(f"[INFO] LLM Configuration from .env:")
+                print(f"[INFO]   MODEL: {llm_config['model']}")
+                print(f"[INFO]   PROVIDER: {llm_config['provider']}")
+                print(f"[INFO]   BASE_URL: {llm_config['base_url']}")
+                print(f"[INFO]   ENV_KEY: {llm_config['env_key']}")
     except SystemExit as e:
         # If .env loading fails, it will exit with appropriate error message
-        raise
+        raise e
     
     # Extract model from config
     model = llm_config['model']

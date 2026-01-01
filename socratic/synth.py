@@ -186,7 +186,7 @@ def synthesize(
                We tell the agent in the prompt that the source input files are stored in ../. This is how we ensure the agent has read-only access to the source input files but write access to the knowledge base files.
     """
     # Get LLM provider configuration
-    config_options, env_key = get_codex_config_options()
+    config_options = get_codex_config_options()
     
     env = os.environ.copy()
 
@@ -480,8 +480,11 @@ def run_synth(args: argparse.Namespace) -> None:
         if not args.webui_friendly:
             print(f"[INFO] LLM Configuration from .env:")
             print(f"[INFO]   MODEL: {llm_config['model']}")
-            print(f"[INFO]   BASE_URL: {llm_config['base_url']}")
-            print(f"[INFO]   ENV_KEY: {llm_config['env_key']}")
+            print(f"[INFO]   PROVIDER: {llm_config['provider']}")
+            if llm_config['base_url']:
+                print(f"[INFO]   BASE_URL: {llm_config['base_url']}")
+            if llm_config['env_key']:
+                print(f"[INFO]   ENV_KEY: {llm_config['env_key']}")
     except SystemExit as e:
         # If .env loading fails, it will exit with appropriate error message
         raise

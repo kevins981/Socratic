@@ -110,24 +110,25 @@ socratic-cli digest --project airline_demo
 # Export knowledge base (Agent.md)
 socratic-cli export --project airline_demo
 ```
-
+  
 ## Supported Models
+To configure the LLM model to use, create a `.env` file at the project root (see `.env.example`).
 
-Socratic works with any LLM that exposes an OpenAI-compatible API, including locally hosted models.
+### OpenAI Models
+Socratic is powered by OpenAI Codex. If you already have access to Codex via a ChatGPT subscription, you can directly use it by setting `PROVIDER=chatgpt` in .env file. See .env.example for examples.
+- Note that the set of models supported by ChatGPT Codex is limited. See https://developers.openai.com/codex/models/. 
 
-To configure your model, create a `.env` file at the project root (see `.env.example`).
+You can also bring your own OpenAI API key and use any OpenAI model available through the API. 
+To do this, specify `PROVIDER=openai`, `BASE_URL=https://api.openai.com/v1`, and `ENV_KEY=OPENAI_API_KEY`. Make sure `OPENAI_API_KEY` env var is set in your shell.
 
-The `.env` file must include:
-- `MODEL`
-- `BASE_URL`
-- `ENV_KEY`
-- `PROVIDER`
+### OpenRouter Models and Local Models
+In addition, Socratic works with any LLM that exposes an OpenAI-compatible API, including locally hosted models. See .env.example for examples. 
 
-### Model Quality Notes
+### Notes on Model Quality
 
-Some models do not work well with Codex due to tool-calling issues. In practice:
+Some models do not work well with Socratic due to tool-calling issues. In practice:
 
-- **Most stable:** `gpt-5`, `gpt-5.1`
+- **Most stable:** `gpt-5.2(-codex)`, `gpt-5.1`
 - **Works well:** `glm-4.6`, `grok-4`
 
 In some cases, the model may encouter tool calling problems and therefore fail unexpectedly. E.g., `gpt-oss-120` is known to be unstable. In general, smaller models tend to be more unstable.

@@ -27,7 +27,7 @@ export default function SynthesizePage() {
   const [startingSession, setStartingSession] = useState(false);
   const [userInput, setUserInput] = useState('');
   const [sendingInput, setSendingInput] = useState(false);
-  const [agentMode, setAgentMode] = useState('synth'); // 'synth' | 'digest'
+  const [agentMode, setAgentMode] = useState('synth'); // 'synth' | 'digest' | 'ask'
   const [modeDropdownOpen, setModeDropdownOpen] = useState(false);
   const [receivedFirstMessage, setReceivedFirstMessage] = useState(false); // For digest mode
   const terminalRef = useRef(null);
@@ -350,16 +350,16 @@ export default function SynthesizePage() {
             setLogs((prev) => [...prev, { type: 'agent', content: msg.line }]);
             // For digest mode, enable input after receiving first agent message
             setReceivedFirstMessage(true);
-            // Check for KB changes after receiving agent messages
+            // Check for KB changes after receiving agent messages (skip for Ask mode - read-only)
             // We debounce this by checking on non-empty lines that aren't status messages
             const line = msg.line.trim();
-            if (line && !line.startsWith('[') && !line.includes('in progress')) {
+            if (agentMode !== 'ask' && line && !line.startsWith('[') && !line.includes('in progress')) {
               fetchKbDiff();
             }
           } else if (msg.type === 'status') {
             setChatStatus(msg.status);
-            // Fetch diffs when agent finishes a response
-            if (msg.status === 'waiting' || msg.status === 'exited') {
+            // Fetch diffs when agent finishes a response (skip for Ask mode - read-only)
+            if (agentMode !== 'ask' && (msg.status === 'waiting' || msg.status === 'exited')) {
               fetchKbDiff();
             }
             if (msg.status === 'exited' || msg.status === 'error') {
@@ -796,7 +796,7 @@ export default function SynthesizePage() {
       {/* Right Pane: Agent Chat */}
       <div className="chat-pane">
         <div className="chat-header">
-          <span className="chat-mode-label">{sessionId ? (agentMode === 'synth' ? 'Synth' : 'Digest') : 'Agent'}</span>
+          <span className="chat-mode-label">{sessionId ? (agentMode === 'synth' ? 'Synth' : agentMode === 'digest' ? 'Digest' : 'Ask') : 'Agent'}</span>
           {sessionId && (
             <button
               className="chat-new-session-btn"
@@ -883,7 +883,7 @@ export default function SynthesizePage() {
                 onClick={() => setModeDropdownOpen(!modeDropdownOpen)}
               >
                 <span className="mode-dropdown-label">Mode:</span>
-                <span className="mode-dropdown-value">{agentMode === 'synth' ? 'Synth' : 'Digest'}</span>
+                <span className="mode-dropdown-value">{agentMode === 'synth' ? 'Synth' : agentMode === 'digest' ? 'Digest' : 'Ask'}</span>
                 <span className={`mode-dropdown-arrow ${modeDropdownOpen ? 'open' : ''}`}>▾</span>
               </button>
               {modeDropdownOpen && (
@@ -901,6 +901,13 @@ export default function SynthesizePage() {
                   >
                     <span className="mode-item-name">Digest</span>
                     <span className="mode-item-desc">Question-first learning</span>
+                  </button>
+                  <button
+                    className={`mode-dropdown-item ${agentMode === 'ask' ? 'active' : ''}`}
+                    onClick={() => { setAgentMode('ask'); setModeDropdownOpen(false); }}
+                  >
+                    <span className="mode-item-name">Ask</span>
+                    <span className="mode-item-desc">Read-only Q&A</span>
                   </button>
                 </div>
               )}

@@ -17,8 +17,8 @@ export async function POST(req) {
     }
     
     // Validate mode parameter
-    if (mode !== 'synth' && mode !== 'digest') {
-      return NextResponse.json({ error: 'Invalid mode. Must be "synth" or "digest"' }, { status: 400 });
+    if (!['synth', 'digest', 'ask'].includes(mode)) {
+      return NextResponse.json({ error: 'Invalid mode. Must be "synth", "digest", or "ask"' }, { status: 400 });
     }
 
     const projectName = process.env.PROJECT_NAME || 'Socratic Project';
@@ -28,7 +28,7 @@ export async function POST(req) {
 
     const args = [
       '-u', // Unbuffered output for real-time streaming
-      '-m', 'socratic.cli', mode, // 'synth' or 'digest'
+      '-m', 'socratic.cli', mode, // 'synth', 'digest', or 'ask'
       '--project', projectName,
       '--webui_friendly' // this removes the fancy prints for terminal output
     ];

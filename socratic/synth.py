@@ -310,7 +310,7 @@ def synthesize(
         ]
         
         # Add all config options
-        for config_opt in config_options:
+        for config_opt in codex_config_options:
             resume_command.extend(["--config", config_opt])
         
         # Only add reasoning effort for OpenAI reasoning models

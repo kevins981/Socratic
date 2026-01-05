@@ -51,12 +51,6 @@ Using Socratic to build knowledge base for Google Analytics SQL agent:
 https://youtu.be/L20vOB3whMs
 
 ## Install 
-From Pypi:
-```bash
-pip install socratic-cli
-```
-
-From Source:
 ```bash
 git clone https://github.com/kevins981/Socratic.git
 cd socratic

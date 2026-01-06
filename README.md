@@ -51,6 +51,8 @@ Using Socratic to build knowledge base for Google Analytics SQL agent:
 https://youtu.be/L20vOB3whMs
 
 ## Install 
+Linux kernel >= 5.15 is required. 
+
 ```bash
 git clone https://github.com/kevins981/Socratic.git
 cd socratic
